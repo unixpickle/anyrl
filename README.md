@@ -4,8 +4,6 @@ Package trpo will implement [Trust Region Policy Optimization](https://arxiv.org
 
 # TODO
 
- * JoinRolloutBatches
-   * Make lazyrnn Join API
  * Way to record rollout batches from OpenAI Gym
    * Make lazyrnn Writer API - create Seq dynamically
    * Make lazyrnn MemRereader API - create Rereader from Seq
