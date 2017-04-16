@@ -1,53 +1,47 @@
 package trpo
 
-import (
-	"github.com/unixpickle/anyvec"
-	"github.com/unixpickle/lazyrnn"
-)
+import "github.com/unixpickle/lazyrnn"
 
-// A RolloutSet is a batch of rollouts.
+// A RolloutSet is a batch of recorded episodes.
 //
 // An instance of RolloutSet contains three different
-// sequence batches, each describing a different aspect
-// of the episodes.
-//
-// All of the sequence batches are constant, i.e. nothing
-// will happen if they are back-propagated through.
+// tapes, each describing a different aspect of the
+// episode.
 type RolloutSet struct {
 	// Inputs contains the inputs to the agent at
 	// each timestep.
-	Inputs lazyrnn.Rereader
+	Inputs lazyrnn.Tape
 
 	// Rewards contains the immediate reward at each
 	// timestep.
-	Rewards lazyrnn.Rereader
+	Rewards lazyrnn.Tape
 
 	// SampledOuts contains the sampled agent action
 	// at each timestep.
-	SampledOuts lazyrnn.Rereader
+	SampledOuts lazyrnn.Tape
 }
 
 // PackRolloutSets joins multiple RolloutSets into one
 // larger set.
-func PackRolloutSets(c anyvec.Creator, rs []*RolloutSet) *RolloutSet {
+func PackRolloutSets(rs []*RolloutSet) *RolloutSet {
 	res := &RolloutSet{}
-	fieldGetters := []func(r *RolloutSet) *lazyrnn.Rereader{
-		func(r *RolloutSet) *lazyrnn.Rereader {
+	fieldGetters := []func(r *RolloutSet) *lazyrnn.Tape{
+		func(r *RolloutSet) *lazyrnn.Tape {
 			return &r.Inputs
 		},
-		func(r *RolloutSet) *lazyrnn.Rereader {
+		func(r *RolloutSet) *lazyrnn.Tape {
 			return &r.Rewards
 		},
-		func(r *RolloutSet) *lazyrnn.Rereader {
+		func(r *RolloutSet) *lazyrnn.Tape {
 			return &r.SampledOuts
 		},
 	}
 	for _, getter := range fieldGetters {
-		var seqs []lazyrnn.Rereader
+		var tapes []lazyrnn.Tape
 		for _, r := range rs {
-			seqs = append(seqs, *getter(r))
+			tapes = append(tapes, *getter(r))
 		}
-		*getter(res) = lazyrnn.PackRereader(c, seqs)
+		*getter(res) = lazyrnn.PackTape(tapes)
 	}
 	return res
 }
