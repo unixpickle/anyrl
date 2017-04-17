@@ -5,10 +5,10 @@ Package trpo will implement [Trust Region Policy Optimization](https://arxiv.org
 # TODO
 
  * Way to record rollout batches from OpenAI Gym
-   * Make lazyrnn Writer API - create Seq dynamically
-   * Make lazyrnn MemRereader API - create Rereader from Seq
-     * Potentially create DiskRereader too
  * Compute score function (grad of log-prob) from RolloutBatch
-   * Make lazyrnn Map and MapN APIs
- * Compute KL from RolloutBatch
-   * Make lazyrnn Mean aggregate
+ * Compute Fisher-vector products
+   * Make copy of model with anyfwd parameters
+   * Compute KL from RolloutBatch
+     * KL between constant Tape of outputs and variable outputs
+ * Add option to do CG on subset of trajectories
+   * lazyrnn Reduce() and potentially Prune() APIs.
