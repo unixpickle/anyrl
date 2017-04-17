@@ -14,8 +14,13 @@ import (
 // space.
 //
 // The computed gradient is added to the grad argument.
-func PolicyGradient(c anyvec.Creator, a ActionSpace, r *RolloutSet,
-	grad anydiff.Grad, policy func(in lazyrnn.Rereader) lazyrnn.Seq) {
+func PolicyGradient(a ActionSpace, r *RolloutSet, grad anydiff.Grad,
+	policy func(in lazyrnn.Rereader) lazyrnn.Seq) {
+	if len(grad) == 0 {
+		return
+	}
+	c := creatorFromGrad(grad)
+
 	inRereader := lazyrnn.TapeRereader(c, r.Inputs)
 	policyOut := policy(inRereader)
 
@@ -35,4 +40,11 @@ func PolicyGradient(c anyvec.Creator, a ActionSpace, r *RolloutSet,
 	one := c.MakeVector(1)
 	one.AddScalar(c.MakeNumeric(1))
 	score.Propagate(one, grad)
+}
+
+func creatorFromGrad(g anydiff.Grad) anyvec.Creator {
+	for _, v := range g {
+		return v.Creator()
+	}
+	panic("empty gradient")
 }
