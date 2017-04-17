@@ -1,6 +1,9 @@
 package anyrl
 
-import "github.com/unixpickle/lazyrnn"
+import (
+	"github.com/unixpickle/anydiff/anyseq"
+	"github.com/unixpickle/lazyrnn"
+)
 
 // A RolloutSet is a batch of recorded episodes.
 //
@@ -44,4 +47,34 @@ func PackRolloutSets(rs []*RolloutSet) *RolloutSet {
 		*getter(res) = lazyrnn.PackTape(tapes)
 	}
 	return res
+}
+
+// RemainingRewards derives a tape from r.Rewards which,
+// at each time-step, has the total reward from that
+// time-step to the end of the episode.
+func (r *RolloutSet) RemainingRewards() lazyrnn.Tape {
+	var sum *anyseq.Batch
+	for batch := range r.Rewards.ReadTape(0, -1) {
+		if sum == nil {
+			sum = &anyseq.Batch{
+				Present: batch.Present,
+				Packed:  batch.Packed.Copy(),
+			}
+		} else {
+			sum.Packed.Add(batch.Expand(sum.Present).Packed)
+		}
+	}
+
+	resTape, writer := lazyrnn.ReferenceTape()
+
+	for batch := range r.Rewards.ReadTape(0, -1) {
+		// Create two separate copies of the sum to
+		// avoid modifying the batch we send.
+		writer <- sum.Reduce(batch.Present)
+		sum = sum.Reduce(batch.Present)
+		sum.Packed.Sub(batch.Packed)
+	}
+
+	close(writer)
+	return resTape
 }
