@@ -56,6 +56,9 @@ func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
 		return n.apply(in, n.Policy)
 	})
 
+	// TODO: add option for running CG on a subset of the
+	// total experience.
+
 	n.conjugateGradients(r, grad)
 
 	return grad
