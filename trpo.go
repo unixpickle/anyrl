@@ -16,7 +16,7 @@ const DefaultLineSearchDecay = 0.5
 
 // Default maximum number of line-search iterations for
 // TRPO.
-const DefaultMaxLineSearch = 10
+const DefaultMaxLineSearch = 20
 
 // TRPO uses the Trust Region Policy Optimization
 // algorithm to train agents.
@@ -124,6 +124,8 @@ func (t *TRPO) acceptable(r *RolloutSet, grad anydiff.Grad, outs lazyrnn.Tape) b
 	outStats := lazyrnn.Mean(mappedOut).Output()
 	improvement := anyvec.Sum(outStats.Slice(0, 1))
 	kl := anyvec.Sum(outStats.Slice(1, 2))
+
+	fmt.Println("imp, kl", improvement, kl)
 
 	switch val := improvement.(type) {
 	case float32:
