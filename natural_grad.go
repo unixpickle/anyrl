@@ -6,6 +6,7 @@ import (
 	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
+	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyrnn"
 	"github.com/unixpickle/serializer"
 )
@@ -55,10 +56,61 @@ func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
 		return n.apply(in, n.Policy)
 	})
 
-	// TODO: perform conjugate gradients here using applyFisher().
-	panic("not yet implemented")
+	n.conjugateGradients(r, grad)
 
 	return grad
+}
+
+func (n *NaturalPG) conjugateGradients(r *RolloutSet, grad anydiff.Grad) {
+	c := creatorFromGrad(grad)
+	storedOuts := n.storePolicyOutputs(c, r)
+
+	// Solving "Fx = grad" for x, where F is the
+	// Fisher matrix.
+	// Algorithm taken from
+	// https://en.wikipedia.org/wiki/Conjugate_gradient_method#The_resulting_algorithm.
+
+	x := copyGrad(grad)
+	x.Clear()
+	residual := copyGrad(grad)
+	proj := copyGrad(residual)
+
+	residualMag := dotGrad(residual, residual)
+
+	for i := 0; i < n.iters(); i++ {
+		appliedProj := n.applyFisher(r, proj, storedOuts)
+		alpha := quotient(c, residualMag, dotGrad(proj, appliedProj))
+
+		alphaProj := copyGrad(proj)
+		alphaProj.Scale(alpha)
+		addToGrad(x, alphaProj)
+
+		appliedProj.Scale(alpha)
+		subFromGrad(residual, appliedProj)
+
+		newResidualMag := dotGrad(residual, residual)
+		beta := quotient(c, newResidualMag, residualMag)
+		residualMag = newResidualMag
+
+		oldProj := proj
+		proj = copyGrad(residual)
+		oldProj.Scale(beta)
+		addToGrad(proj, oldProj)
+	}
+
+	setGrad(grad, x)
+}
+
+func (n *NaturalPG) storePolicyOutputs(c anyvec.Creator, r *RolloutSet) lazyrnn.Tape {
+	tape, writer := lazyrnn.ReferenceTape()
+
+	out := n.apply(lazyrnn.TapeRereader(c, r.Inputs), n.Policy)
+	for outVec := range out.Forward() {
+		writer <- outVec
+	}
+
+	close(writer)
+	return tape
 }
 
 func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
@@ -110,6 +162,14 @@ func (n *NaturalPG) makeFwd(c *anyfwd.Creator, g anydiff.Grad) (anyrnn.Block,
 		return MakeFwdDiff(c, n.Policy, g)
 	} else {
 		return n.FwdDiff(c, n.Policy, g)
+	}
+}
+
+func (n *NaturalPG) iters() int {
+	if n.Iters != 0 {
+		return n.Iters
+	} else {
+		return DefaultConjGradIters
 	}
 }
 
@@ -174,4 +234,47 @@ func (m *makeFwdTape) ReadTape(start, end int) <-chan *anyseq.Batch {
 		}
 	}()
 	return res
+}
+
+func copyGrad(g anydiff.Grad) anydiff.Grad {
+	res := anydiff.Grad{}
+	for k, v := range g {
+		res[k] = v.Copy()
+	}
+	return res
+}
+
+func dotGrad(g1, g2 anydiff.Grad) anyvec.Numeric {
+	c := creatorFromGrad(g1)
+	sum := c.MakeVector(1)
+	for variable, grad := range g1 {
+		sum.AddScalar(grad.Dot(g2[variable]))
+	}
+	return anyvec.Sum(sum)
+}
+
+func quotient(c anyvec.Creator, num, denom anyvec.Numeric) anyvec.Numeric {
+	vec := c.MakeVector(1)
+	vec.AddScalar(denom)
+	anyvec.Pow(vec, c.MakeNumeric(-1))
+	vec.Scale(num)
+	return anyvec.Sum(vec)
+}
+
+func addToGrad(dst, src anydiff.Grad) {
+	for variable, dstVec := range dst {
+		dstVec.Add(src[variable])
+	}
+}
+
+func subFromGrad(dst, src anydiff.Grad) {
+	for variable, dstVec := range dst {
+		dstVec.Sub(src[variable])
+	}
+}
+
+func setGrad(dst, src anydiff.Grad) {
+	for variable, dstVec := range dst {
+		dstVec.Set(src[variable])
+	}
 }
