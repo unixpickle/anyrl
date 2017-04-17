@@ -70,28 +70,39 @@ func (n *NaturalPG) conjugateGradients(r *RolloutSet, grad anydiff.Grad) {
 	// Algorithm taken from
 	// https://en.wikipedia.org/wiki/Conjugate_gradient_method#The_resulting_algorithm.
 
-	x := copyGrad(grad)
-	x.Clear()
+	// x = 0
+	x := zeroGrad(grad)
+
+	// r = b - Ax = b
 	residual := copyGrad(grad)
-	proj := copyGrad(residual)
+
+	// p = r
+	proj := copyGrad(grad)
 
 	residualMag := dotGrad(residual, residual)
 
 	for i := 0; i < n.iters(); i++ {
+		// A*p
 		appliedProj := n.applyFisher(r, proj, storedOuts)
+
+		// (r dot r) / (p dot A*p)
 		alpha := quotient(c, residualMag, dotGrad(proj, appliedProj))
 
+		// x = x + alpha*p
 		alphaProj := copyGrad(proj)
 		alphaProj.Scale(alpha)
 		addToGrad(x, alphaProj)
 
+		// r = r - alpha*A*p
 		appliedProj.Scale(alpha)
 		subFromGrad(residual, appliedProj)
 
+		// (newR dot newR) / (r dot r)
 		newResidualMag := dotGrad(residual, residual)
 		beta := quotient(c, newResidualMag, residualMag)
 		residualMag = newResidualMag
 
+		// p = beta*p + r
 		oldProj := proj
 		proj = copyGrad(residual)
 		oldProj.Scale(beta)
@@ -242,6 +253,12 @@ func copyGrad(g anydiff.Grad) anydiff.Grad {
 	for k, v := range g {
 		res[k] = v.Copy()
 	}
+	return res
+}
+
+func zeroGrad(g anydiff.Grad) anydiff.Grad {
+	res := copyGrad(g)
+	res.Clear()
 	return res
 }
 
