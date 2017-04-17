@@ -1,5 +1,4 @@
-// Package trpo implements Trust Region Policy
-// Optimization, a gradient-based reinforcement learning
-// algorithm.
+// Package anyrl implements various algorithms and helpers
+// for Reinforcement Learning.
 // See https://arxiv.org/abs/1502.05477.
-package trpo
+package anyrl
