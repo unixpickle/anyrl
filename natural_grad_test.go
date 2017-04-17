@@ -111,10 +111,13 @@ func TestConjugateGradients(t *testing.T) {
 		Iters:       14,
 	}
 
+	// We have to use the actual gradient to avoid the
+	// nullspace of the Fisher matrix.
 	inGrad := anydiff.NewGrad(block.Parameters()...)
-	for _, vec := range inGrad {
-		anyvec.Rand(vec, anyvec.Normal, nil)
-	}
+	PolicyGradient(npg.ActionSpace, r, inGrad,
+		func(in lazyrnn.Rereader) lazyrnn.Rereader {
+			return lazyrnn.Lazify(anyrnn.Map(lazyrnn.Unlazify(in), block))
+		})
 	solvedGrad := copyGrad(inGrad)
 
 	npg.conjugateGradients(r, solvedGrad)
@@ -141,13 +144,58 @@ func TestConjugateGradients(t *testing.T) {
 
 func rolloutsForTest(c anyvec.Creator) *RolloutSet {
 	inputs, inputWriter := lazyrnn.ReferenceTape()
-	inputWriter <- &anyseq.Batch{
-		Present: []bool{true, false, true},
-		Packed:  c.MakeVectorData(c.MakeNumericList([]float64{1, 2, -3, 2, -1, 0})),
+	rewards, rewardWriter := lazyrnn.ReferenceTape()
+	sampledOuts, sampledOutsWriter := lazyrnn.ReferenceTape()
+	for i := 0; i < 3; i++ {
+		vec := c.MakeVector(6)
+		anyvec.Rand(vec, anyvec.Normal, nil)
+		rew := c.MakeVector(2)
+		anyvec.Rand(rew, anyvec.Uniform, nil)
+		inputWriter <- &anyseq.Batch{
+			Present: []bool{true, false, true},
+			Packed:  vec,
+		}
+		rewardWriter <- &anyseq.Batch{
+			Present: []bool{true, false, true},
+			Packed:  rew,
+		}
+		sampled := make([]float64, 4)
+		sampled[i%2] = 1
+		sampled[(i+1)%2+2] = 1
+		sampledOutsWriter <- &anyseq.Batch{
+			Present: []bool{true, false, true},
+			Packed:  c.MakeVectorData(c.MakeNumericList(sampled)),
+		}
+	}
+	for i := 0; i < 8; i++ {
+		vec := c.MakeVector(3)
+		anyvec.Rand(vec, anyvec.Normal, nil)
+		rew := c.MakeVector(1)
+		anyvec.Rand(rew, anyvec.Uniform, nil)
+		inputWriter <- &anyseq.Batch{
+			Present: []bool{false, false, true},
+			Packed:  vec,
+		}
+		rewardWriter <- &anyseq.Batch{
+			Present: []bool{false, false, true},
+			Packed:  rew,
+		}
+		sampled := make([]float64, 2)
+		sampled[i%2] = 1
+		sampledOutsWriter <- &anyseq.Batch{
+			Present: []bool{false, false, true},
+			Packed:  c.MakeVectorData(c.MakeNumericList(sampled)),
+		}
 	}
 	close(inputWriter)
+	close(rewardWriter)
+	close(sampledOutsWriter)
 
-	rollouts := &RolloutSet{Inputs: inputs}
+	rollouts := &RolloutSet{
+		Inputs:      inputs,
+		Rewards:     rewards,
+		SampledOuts: sampledOuts,
+	}
 
 	// TODO: create rewards and outputs as well.
 
