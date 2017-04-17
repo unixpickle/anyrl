@@ -15,7 +15,7 @@ import (
 //
 // The computed gradient is added to the grad argument.
 func PolicyGradient(a ActionSpace, r *RolloutSet, grad anydiff.Grad,
-	policy func(in lazyrnn.Rereader) lazyrnn.Seq) {
+	policy func(in lazyrnn.Rereader) lazyrnn.Rereader) {
 	if len(grad) == 0 {
 		return
 	}
@@ -24,7 +24,6 @@ func PolicyGradient(a ActionSpace, r *RolloutSet, grad anydiff.Grad,
 	inRereader := lazyrnn.TapeRereader(c, r.Inputs)
 	policyOut := policy(inRereader)
 
-	policyRereader := lazyrnn.Lazify(lazyrnn.Unlazify(policyOut))
 	selectedOuts := lazyrnn.TapeRereader(c, r.SampledOuts)
 	rewards := lazyrnn.TapeRereader(c, r.RemainingRewards())
 
@@ -34,7 +33,7 @@ func PolicyGradient(a ActionSpace, r *RolloutSet, grad anydiff.Grad,
 		rewards := v[2]
 		logProb := a.LogProb(actionParams, selected.Output(), n)
 		return anydiff.Mul(logProb, rewards)
-	}, policyRereader, selectedOuts, rewards)
+	}, policyOut, selectedOuts, rewards)
 
 	score := lazyrnn.Mean(scores)
 	one := c.MakeVector(1)

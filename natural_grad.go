@@ -41,7 +41,7 @@ type NaturalPG struct {
 
 	// ApplyPolicy applies a policy to an input sequence.
 	// If nil, back-propagation through time is used.
-	ApplyPolicy func(s lazyrnn.Rereader, b anyrnn.Block) lazyrnn.Seq
+	ApplyPolicy func(s lazyrnn.Rereader, b anyrnn.Block) lazyrnn.Rereader
 }
 
 // Run computes the natural gradient for the rollouts.
@@ -51,7 +51,7 @@ func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
 		return grad
 	}
 
-	PolicyGradient(n.ActionSpace, r, grad, func(in lazyrnn.Rereader) lazyrnn.Seq {
+	PolicyGradient(n.ActionSpace, r, grad, func(in lazyrnn.Rereader) lazyrnn.Rereader {
 		return n.apply(in, n.Policy)
 	})
 
@@ -72,10 +72,9 @@ func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
 	fwdIn := &makeFwdTape{Tape: r.Inputs, Creator: c}
 
 	outSeq := n.apply(lazyrnn.TapeRereader(c, fwdIn), fwdBlock)
-	outRereader := lazyrnn.Lazify(lazyrnn.Unlazify(outSeq))
 	klDiv := lazyrnn.Mean(lazyrnn.MapN(func(num int, v ...anydiff.Res) anydiff.Res {
 		return n.ActionSpace.KL(v[0], v[1], num)
-	}, lazyrnn.TapeRereader(c, fwdOldOuts), outRereader))
+	}, lazyrnn.TapeRereader(c, fwdOldOuts), outSeq))
 
 	newGrad := anydiff.Grad{}
 	for newParam, oldParam := range paramMap {
@@ -96,7 +95,7 @@ func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
 	return out
 }
 
-func (n *NaturalPG) apply(in lazyrnn.Rereader, b anyrnn.Block) lazyrnn.Seq {
+func (n *NaturalPG) apply(in lazyrnn.Rereader, b anyrnn.Block) lazyrnn.Rereader {
 	if n.ApplyPolicy == nil {
 		cachedIn := lazyrnn.Unlazify(in)
 		return lazyrnn.Lazify(anyrnn.Map(cachedIn, b))
