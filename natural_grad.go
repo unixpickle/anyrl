@@ -23,8 +23,8 @@ type NaturalPG struct {
 	Params      []*anydiff.Var
 	ActionSpace ActionSpace
 
-	// Iters specifies the number of iterations for which
-	// to run Conjugate Gradients.
+	// Iters specifies the number of iterations of the
+	// Conjugate Gradients algorithm.
 	// If 0, DefaultConjGradIters is used.
 	Iters int
 
@@ -34,7 +34,7 @@ type NaturalPG struct {
 	//
 	// Since the resulting block will have a different set
 	// of parameter pointers, this returns a mapping from
-	// the new parameters to the old parameters.
+	// the new parameters to old parameters.
 	//
 	// If nil, the package-level MakeFwdDiff is used.
 	FwdDiff func(c *anyfwd.Creator, p anyrnn.Block, g anydiff.Grad) (anyrnn.Block,
@@ -232,6 +232,7 @@ func (m *makeFwdTape) ReadTape(start, end int) <-chan *anyseq.Batch {
 			newBatch.Packed.(*anyfwd.Vector).Values.Set(in.Packed)
 			res <- newBatch
 		}
+		close(res)
 	}()
 	return res
 }
