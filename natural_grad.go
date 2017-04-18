@@ -187,7 +187,7 @@ func (n *NaturalPG) iters() int {
 	}
 }
 
-// MakeFwdDiff copies the NaturalPolicy, updates it to use
+// MakeFwdDiff copies the RNN policy, updates it to use
 // forward automatic differentiation, and sets the forward
 // derivatives to the vectors in g.
 // It returns the new block and a mapping from the new
