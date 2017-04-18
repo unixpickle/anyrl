@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/flate"
 	"log"
 	"sync"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec32"
+	"github.com/unixpickle/lazyseq"
+	"github.com/unixpickle/lazyseq/lazyrnn"
 	"github.com/unixpickle/rip"
 	"github.com/unixpickle/serializer"
 )
@@ -76,6 +79,14 @@ func main() {
 			Policy:      policy,
 			Params:      policy.Parameters(),
 			ActionSpace: actionSampler,
+
+			// Apply the RNN in a low-memory way.
+			ApplyPolicy: func(seq lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader {
+				out := lazyrnn.FixedHSM(1, true, seq, b)
+
+				// Stores the RNN outputs in memory, but nothing else.
+				return lazyseq.Lazify(lazyseq.Unlazify(out))
+			},
 		},
 	}
 
@@ -89,8 +100,7 @@ func main() {
 			// Gather episode rollouts.
 			var rollouts []*anyrl.RolloutSet
 			for i := 0; i < BatchSize; i++ {
-				rollout, err := anyrl.RolloutRNN(creator, policy, actionSampler, envs...)
-				must(err)
+				rollout := rollout(creator, policy, envs)
 				log.Printf("batch %d: sub_batch=%d mean_reward=%v", batchIdx, i,
 					rollout.MeanReward(creator))
 				rollouts = append(rollouts, rollout)
@@ -141,6 +151,26 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 			},
 		}
 	}
+}
+
+func rollout(creator anyvec.Creator, agent anyrnn.Block, envs []anyrl.Env) *anyrl.RolloutSet {
+	// Compress the input frames as we store them.
+	// If we used a ReferenceTape for the input, the
+	// program would use way too much memory.
+	inputs, inputCh := lazyseq.CompressedTape(flate.DefaultCompression)
+
+	rewards, rewardsCh := lazyseq.ReferenceTape()
+	sampled, sampledCh := lazyseq.ReferenceTape()
+
+	err := anyrl.RolloutRNNChans(creator, agent, anyrl.Softmax{},
+		inputCh, rewardsCh, sampledCh, envs...)
+	must(err)
+
+	close(inputCh)
+	close(rewardsCh)
+	close(sampledCh)
+
+	return &anyrl.RolloutSet{Inputs: inputs, Rewards: rewards, SampledOuts: sampled}
 }
 
 func must(err error) {

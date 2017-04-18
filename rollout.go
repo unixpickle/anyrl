@@ -98,11 +98,9 @@ func (r *RolloutSet) MeanReward(c anyvec.Creator) anyvec.Numeric {
 
 // RolloutRNN performs rollouts using an RNN.
 //
-// If feedback is true, the reward from the previous
-// time-step is appended to the end of each observation.
+// One rollout is performed per environment.
 func RolloutRNN(c anyvec.Creator, agent anyrnn.Block, actionSampler Sampler,
 	envs ...Env) (*RolloutSet, error) {
-	// TODO: support other Tape types.
 	inputs, inputCh := lazyseq.ReferenceTape()
 	rewards, rewardsCh := lazyseq.ReferenceTape()
 	sampled, sampledCh := lazyseq.ReferenceTape()
@@ -113,15 +111,28 @@ func RolloutRNN(c anyvec.Creator, agent anyrnn.Block, actionSampler Sampler,
 		close(sampledCh)
 	}()
 
-	res := &RolloutSet{Inputs: inputs, Rewards: rewards, SampledOuts: sampled}
+	err := RolloutRNNChans(c, agent, actionSampler, inputCh, rewardsCh, sampledCh, envs...)
+	if err != nil {
+		return nil, err
+	}
+	return &RolloutSet{Inputs: inputs, Rewards: rewards, SampledOuts: sampled}, nil
+}
 
+// RolloutRNNChans is like RolloutRNN, but the batches of
+// sampled data are sent directly to the given channels.
+// This makes it possible to use custom tape types.
+//
+// RolloutRNNChans will not close the channels after it is
+// done with them.
+func RolloutRNNChans(c anyvec.Creator, agent anyrnn.Block, actionSampler Sampler,
+	inputCh, rewardsCh, sampledCh chan<- *anyseq.Batch, envs ...Env) error {
 	if len(envs) == 0 {
-		return res, nil
+		return nil
 	}
 
 	initBatch, err := rolloutReset(c, envs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	inBatch := initBatch
@@ -143,13 +154,13 @@ func RolloutRNN(c anyvec.Creator, agent anyrnn.Block, actionSampler Sampler,
 		var rewardBatch *anyseq.Batch
 		inBatch, rewardBatch, err = rolloutStep(actionBatch, envs)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		rewardsCh <- rewardBatch
 	}
 
-	return res, nil
+	return nil
 }
 
 func rolloutReset(c anyvec.Creator, envs []Env) (*anyseq.Batch, error) {
