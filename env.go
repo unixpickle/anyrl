@@ -115,9 +115,22 @@ func (b *boxSpaceConverter) ToGym(in anyvec.Vector) interface{} {
 }
 
 func (b *boxSpaceConverter) FromGym(in interface{}) (anyvec.Vector, error) {
-	if in64, ok := in.([]float64); ok {
-		return b.Creator.MakeVectorData(b.Creator.MakeNumericList(in64)), nil
-	} else {
+	switch in := in.(type) {
+	case []float64:
+		return b.Creator.MakeVectorData(b.Creator.MakeNumericList(in)), nil
+	case [][]float64:
+		var joined []float64
+		for _, x := range in {
+			joined = append(joined, x...)
+		}
+		return b.FromGym(joined)
+	case [][][]float64:
+		var joined [][]float64
+		for _, x := range in {
+			joined = append(joined, x...)
+		}
+		return b.FromGym(joined)
+	default:
 		return nil, fmt.Errorf("unexpected observation type: %T", in)
 	}
 }
