@@ -14,7 +14,7 @@ import (
 
 const (
 	BaseURL          = "http://localhost:5000"
-	RolloutsPerBatch = 5
+	RolloutsPerBatch = 30
 	NumBatches       = 50
 	RenderEnv        = false
 )
@@ -40,9 +40,11 @@ func main() {
 	creator := anyvec32.CurrentCreator()
 	policy := &anyrnn.LayerBlock{
 		Layer: anynet.Net{
-			anynet.NewFC(creator, 4, 8),
+			anynet.NewFC(creator, 4, 32),
 			anynet.Tanh,
-			anynet.NewFC(creator, 8, 2),
+			anynet.NewFC(creator, 32, 16),
+			anynet.Tanh,
+			anynet.NewFC(creator, 16, 2),
 		},
 	}
 	actionSampler := anyrl.Softmax{}
@@ -58,6 +60,8 @@ func main() {
 			Params:      policy.Parameters(),
 			ActionSpace: actionSampler,
 		},
+		// This is akin to the learning rate.
+		TargetKL: 0.005,
 	}
 
 	for batchIdx := 0; batchIdx < NumBatches; batchIdx++ {
@@ -73,8 +77,7 @@ func main() {
 		r := anyrl.PackRolloutSets(rollouts)
 
 		// Print the rewards.
-		log.Printf("batch %d: mean=%v rewards=%v", batchIdx, r.MeanReward(creator),
-			r.TotalRewards(creator).Data())
+		log.Printf("batch %d: mean_reward=%v", batchIdx, r.MeanReward(creator))
 
 		// Train on the rollouts.
 		grad := trpo.Run(r)
@@ -86,7 +89,7 @@ func main() {
 	// variable or set the second argument of Upload() to a
 	// non-empty string.
 	//
-	//     must(client.Upload("cartpole-monitor", "", ""))
+	//     must(client.Upload(monitorFile, "", ""))
 	//
 }
 
