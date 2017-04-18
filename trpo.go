@@ -20,6 +20,8 @@ const DefaultMaxLineSearch = 20
 
 // TRPO uses the Trust Region Policy Optimization
 // algorithm to train agents.
+//
+// See https://arxiv.org/abs/1502.05477.
 type TRPO struct {
 	NaturalPG
 
