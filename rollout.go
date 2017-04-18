@@ -81,6 +81,19 @@ func (r *RolloutSet) RemainingRewards() lazyrnn.Tape {
 	return resTape
 }
 
+// TotalRewards sums the rewards for each rollout.
+func (r *RolloutSet) TotalRewards(c anyvec.Creator) anyvec.Vector {
+	return lazyrnn.SumEach(lazyrnn.TapeRereader(c, r.Rewards)).Output()
+}
+
+// MeanReward sums the rewards for each rollout, then
+// computes the mean of the sums.
+func (r *RolloutSet) MeanReward(c anyvec.Creator) anyvec.Numeric {
+	total := r.TotalRewards(c)
+	total.Scale(total.Creator().MakeNumeric(1 / float64(total.Len())))
+	return anyvec.Sum(total)
+}
+
 // RolloutRNN performs rollouts using an RNN.
 //
 // If feedback is true, the reward from the previous
