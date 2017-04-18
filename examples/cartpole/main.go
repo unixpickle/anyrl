@@ -29,7 +29,7 @@ func main() {
 	must(err)
 	defer client.Close(id)
 
-	// Start monitoring to "./cartpole-monitor".
+	// Start monitoring to "./gym-monitor".
 	workingDir, err := os.Getwd()
 	must(err)
 	monitorFile := filepath.Join(workingDir, "gym-monitor")
