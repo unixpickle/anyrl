@@ -2,6 +2,8 @@ package anyrl
 
 import (
 	"github.com/unixpickle/anydiff/anyseq"
+	"github.com/unixpickle/anynet/anyrnn"
+	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyrnn"
 )
 
@@ -77,4 +79,112 @@ func (r *RolloutSet) RemainingRewards() lazyrnn.Tape {
 
 	close(writer)
 	return resTape
+}
+
+// RolloutRNN performs rollouts using an RNN.
+//
+// If feedback is true, the reward from the previous
+// time-step is appended to the end of each observation.
+func RolloutRNN(c anyvec.Creator, agent anyrnn.Block, actionSampler Sampler,
+	envs ...Env) (*RolloutSet, error) {
+	// TODO: support other Tape types.
+	inputs, inputCh := lazyrnn.ReferenceTape()
+	rewards, rewardsCh := lazyrnn.ReferenceTape()
+	sampled, sampledCh := lazyrnn.ReferenceTape()
+
+	defer func() {
+		close(inputCh)
+		close(rewardsCh)
+		close(sampledCh)
+	}()
+
+	res := &RolloutSet{Inputs: inputs, Rewards: rewards, SampledOuts: sampled}
+
+	if len(envs) == 0 {
+		return res, nil
+	}
+
+	initBatch, err := rolloutReset(c, envs)
+	if err != nil {
+		return nil, err
+	}
+
+	inBatch := initBatch
+	state := agent.Start(len(initBatch.Present))
+	for inBatch.NumPresent() > 0 {
+		inputCh <- inBatch
+
+		if inBatch.NumPresent() < state.Present().NumPresent() {
+			state = state.Reduce(inBatch.Present)
+		}
+		blockRes := agent.Step(state, inBatch.Packed)
+		state = blockRes.State()
+
+		out := actionSampler.Sample(blockRes.Output(), inBatch.NumPresent())
+		actionBatch := &anyseq.Batch{Packed: out, Present: inBatch.Present}
+
+		sampledCh <- actionBatch
+
+		var rewardBatch *anyseq.Batch
+		inBatch, rewardBatch, err = rolloutStep(actionBatch, envs)
+		if err != nil {
+			return nil, err
+		}
+
+		rewardsCh <- rewardBatch
+	}
+
+	return res, nil
+}
+
+func rolloutReset(c anyvec.Creator, envs []Env) (*anyseq.Batch, error) {
+	initBatch := &anyseq.Batch{
+		Present: make([]bool, len(envs)),
+		Packed:  c.MakeVector(0),
+	}
+
+	for i, e := range envs {
+		obs, err := e.Reset()
+		if err != nil {
+			return nil, err
+		}
+		initBatch.Present[i] = true
+		initBatch.Packed = c.Concat(initBatch.Packed, obs)
+	}
+
+	return initBatch, nil
+}
+
+func rolloutStep(actions *anyseq.Batch, envs []Env) (obs, rewards *anyseq.Batch,
+	err error) {
+	c := actions.Packed.Creator()
+	obs = &anyseq.Batch{
+		Present: make([]bool, len(actions.Present)),
+		Packed:  c.MakeVector(0),
+	}
+	rewards = &anyseq.Batch{
+		Present: actions.Present,
+		Packed:  c.MakeVector(0),
+	}
+	actionChunkSize := actions.Packed.Len() / actions.NumPresent()
+	var actionOffset int
+	for i, e := range envs {
+		if !actions.Present[i] {
+			continue
+		}
+		action := actions.Packed.Slice(actionOffset, actionOffset+actionChunkSize)
+		actionOffset += actionChunkSize
+		obsVec, rew, done, err := e.Step(action)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !done {
+			obs.Present[i] = true
+			obs.Packed = c.Concat(obs.Packed, obsVec)
+		}
+		rewVec := c.MakeVector(1)
+		rewVec.AddScalar(c.MakeNumeric(rew))
+		rewards.Packed = c.Concat(rewards.Packed, rewVec)
+	}
+	return
 }

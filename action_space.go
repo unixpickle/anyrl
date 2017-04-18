@@ -8,14 +8,21 @@ import (
 	"github.com/unixpickle/anyvec"
 )
 
+// A Sampler samples from a parametric distribution.
+//
+// For an example, see Softmax.
+type Sampler interface {
+	// Sample samples a batch of vectors given a batch
+	// of parameter vectors.
+	Sample(params anyvec.Vector, batchSize int) anyvec.Vector
+}
+
 // ActionSpace is a parameterized action space probability
 // distribution.
 //
 // For an example, see Softmax.
 type ActionSpace interface {
-	// Sample samples an action from the action space
-	// given the distribution parameters.
-	Sample(params anyvec.Vector) anyvec.Vector
+	Sampler
 
 	// LogProb produces, for each parameter-output pair
 	// in the batch, a log-probability of the parameters
@@ -39,39 +46,25 @@ type ActionSpace interface {
 // It produces one-hot vector samples.
 type Softmax struct{}
 
-// Sample samples a one-hot vector from the softmax
+// Sample samples one-hot vectors from the softmax
 // distribution.
-func (s Softmax) Sample(params anyvec.Vector) anyvec.Vector {
-	p := params.Copy()
-	anyvec.LogSoftmax(p, 0)
-	anyvec.Exp(p)
-
-	randNum := rand.Float64()
-	idx := p.Len() - 1
-	switch data := p.Data().(type) {
-	case []float32:
-		for i, x := range data {
-			randNum -= float64(x)
-			if randNum < 0 {
-				idx = i
-				break
-			}
-		}
-	case []float64:
-		for i, x := range data {
-			randNum -= x
-			if randNum < 0 {
-				idx = i
-				break
-			}
-		}
-	default:
-		panic(fmt.Sprintf("cannot sample from %T", data))
+func (s Softmax) Sample(params anyvec.Vector, batch int) anyvec.Vector {
+	if params.Len()%batch != 0 {
+		panic("batch size must divide parameter count")
 	}
 
-	oneHot := make([]float64, p.Len())
-	oneHot[idx] = 1
-	return p.Creator().MakeVectorData(p.Creator().MakeNumericList(oneHot))
+	chunkSize := params.Len() / batch
+	p := params.Copy()
+	anyvec.LogSoftmax(p, chunkSize)
+	anyvec.Exp(p)
+
+	var oneHots []anyvec.Vector
+	for i := 0; i < batch; i++ {
+		subset := p.Slice(i*chunkSize, (i+1)*chunkSize)
+		oneHots = append(oneHots, sampleProbabilities(subset))
+	}
+
+	return p.Creator().Concat(oneHots...)
 }
 
 // LogProb computes the output log probabilities.
@@ -114,4 +107,33 @@ func batchedDot(vecs1, vecs2 anydiff.Res, batchSize int) anydiff.Res {
 		Rows: batchSize,
 		Cols: vecs1.Output().Len() / batchSize,
 	})
+}
+
+func sampleProbabilities(p anyvec.Vector) anyvec.Vector {
+	randNum := rand.Float64()
+	idx := p.Len() - 1
+	switch data := p.Data().(type) {
+	case []float32:
+		for i, x := range data {
+			randNum -= float64(x)
+			if randNum < 0 {
+				idx = i
+				break
+			}
+		}
+	case []float64:
+		for i, x := range data {
+			randNum -= x
+			if randNum < 0 {
+				idx = i
+				break
+			}
+		}
+	default:
+		panic(fmt.Sprintf("cannot sample from %T", data))
+	}
+
+	oneHot := make([]float64, p.Len())
+	oneHot[idx] = 1
+	return p.Creator().MakeVectorData(p.Creator().MakeNumericList(oneHot))
 }

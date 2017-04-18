@@ -4,6 +4,5 @@ Package anyrl will implement various APIs for Reinforcement Learning. This will 
 
 # TODO
 
- * Way to record rollout batches from OpenAI Gym
  * Add option to do CG on subset of trajectories
    * lazyrnn Reduce() and potentially Prune() APIs.
