@@ -94,7 +94,8 @@ func (s Softmax) KL(params1, params2 anydiff.Res, batchSize int) anydiff.Res {
 	log1 := anydiff.LogSoftmax(params1, chunkSize)
 	log2 := anydiff.LogSoftmax(params2, chunkSize)
 	return anydiff.Pool(log1, func(log1 anydiff.Res) anydiff.Res {
-		probs := anydiff.Exp(log1)
+		normalizer := log1.Output().Creator().MakeNumeric(1 / float64(chunkSize))
+		probs := anydiff.Scale(anydiff.Exp(log1), normalizer)
 		diff := anydiff.Sub(log1, log2)
 		return batchedDot(probs, diff, batchSize)
 	})
