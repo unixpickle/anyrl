@@ -125,8 +125,6 @@ func (t *TRPO) acceptable(r *RolloutSet, grad anydiff.Grad, outs lazyrnn.Tape) b
 	improvement := anyvec.Sum(outStats.Slice(0, 1))
 	kl := anyvec.Sum(outStats.Slice(1, 2))
 
-	fmt.Println("imp, kl", improvement, kl)
-
 	switch val := improvement.(type) {
 	case float32:
 		if val < 0 || float64(kl.(float32)) > t.targetKL() {
