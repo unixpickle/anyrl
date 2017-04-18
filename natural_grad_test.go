@@ -10,7 +10,7 @@ import (
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec64"
-	"github.com/unixpickle/lazyrnn"
+	"github.com/unixpickle/lazyseq"
 )
 
 func TestFisherDeterministic(t *testing.T) {
@@ -80,11 +80,11 @@ func TestFisher(t *testing.T) {
 	actualOutput := 0.5 * dotGrad(inGrad, applied).(float64)
 
 	inGrad.AddToVars()
-	outSeq := npg.apply(lazyrnn.TapeRereader(c, r.Inputs), block)
-	mapped := lazyrnn.MapN(func(num int, v ...anydiff.Res) anydiff.Res {
+	outSeq := npg.apply(lazyseq.TapeRereader(c, r.Inputs), block)
+	mapped := lazyseq.MapN(func(num int, v ...anydiff.Res) anydiff.Res {
 		return npg.ActionSpace.KL(v[0], v[1], num)
-	}, lazyrnn.TapeRereader(c, stored), outSeq)
-	expectedOutput := anyvec.Sum(lazyrnn.Mean(mapped).Output()).(float64)
+	}, lazyseq.TapeRereader(c, stored), outSeq)
+	expectedOutput := anyvec.Sum(lazyseq.Mean(mapped).Output()).(float64)
 
 	diff := (actualOutput - expectedOutput) / actualOutput
 	if math.Abs(diff) > 1e-3 {
@@ -115,8 +115,8 @@ func TestConjugateGradients(t *testing.T) {
 	// nullspace of the Fisher matrix.
 	inGrad := anydiff.NewGrad(block.Parameters()...)
 	PolicyGradient(npg.ActionSpace, r, inGrad,
-		func(in lazyrnn.Rereader) lazyrnn.Rereader {
-			return lazyrnn.Lazify(anyrnn.Map(lazyrnn.Unlazify(in), block))
+		func(in lazyseq.Rereader) lazyseq.Rereader {
+			return lazyseq.Lazify(anyrnn.Map(lazyseq.Unlazify(in), block))
 		})
 	solvedGrad := copyGrad(inGrad)
 
@@ -143,9 +143,9 @@ func TestConjugateGradients(t *testing.T) {
 }
 
 func rolloutsForTest(c anyvec.Creator) *RolloutSet {
-	inputs, inputWriter := lazyrnn.ReferenceTape()
-	rewards, rewardWriter := lazyrnn.ReferenceTape()
-	sampledOuts, sampledOutsWriter := lazyrnn.ReferenceTape()
+	inputs, inputWriter := lazyseq.ReferenceTape()
+	rewards, rewardWriter := lazyseq.ReferenceTape()
+	sampledOuts, sampledOutsWriter := lazyseq.ReferenceTape()
 	for i := 0; i < 3; i++ {
 		vec := c.MakeVector(6)
 		anyvec.Rand(vec, anyvec.Normal, nil)

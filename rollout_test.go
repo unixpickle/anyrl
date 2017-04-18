@@ -7,13 +7,13 @@ import (
 	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec64"
-	"github.com/unixpickle/lazyrnn"
+	"github.com/unixpickle/lazyseq"
 )
 
 func TestRolloutRemainingRewards(t *testing.T) {
 	c := anyvec64.DefaultCreator{}
 
-	tapeIn, writer := lazyrnn.ReferenceTape()
+	tapeIn, writer := lazyseq.ReferenceTape()
 	writer <- &anyseq.Batch{
 		Present: []bool{true, false, true},
 		Packed:  c.MakeVectorData([]float64{1, 0.5}),

@@ -5,7 +5,7 @@ import (
 
 	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anyvec"
-	"github.com/unixpickle/lazyrnn"
+	"github.com/unixpickle/lazyseq"
 )
 
 // Default target KL divergence for TRPO.
@@ -74,7 +74,7 @@ func (t *TRPO) Run(r *RolloutSet) anydiff.Grad {
 	return grad
 }
 
-func (t *TRPO) stepSize(r *RolloutSet, grad anydiff.Grad, outs lazyrnn.Tape) anyvec.Numeric {
+func (t *TRPO) stepSize(r *RolloutSet, grad anydiff.Grad, outs lazyseq.Tape) anyvec.Numeric {
 	c := creatorFromGrad(grad)
 	dotProd := dotGrad(grad, t.applyFisher(r, grad, outs))
 	resVec := c.MakeVector(1)
@@ -85,20 +85,20 @@ func (t *TRPO) stepSize(r *RolloutSet, grad anydiff.Grad, outs lazyrnn.Tape) any
 	return anyvec.Sum(resVec)
 }
 
-func (t *TRPO) acceptable(r *RolloutSet, grad anydiff.Grad, outs lazyrnn.Tape) bool {
+func (t *TRPO) acceptable(r *RolloutSet, grad anydiff.Grad, outs lazyseq.Tape) bool {
 	backup := t.backupParams()
 	grad.AddToVars()
 	defer t.restoreParams(backup)
 
 	c := creatorFromGrad(grad)
-	inSeq := lazyrnn.TapeRereader(c, r.Inputs)
-	rewardSeq := lazyrnn.TapeRereader(c, r.RemainingRewards())
-	oldOutSeq := lazyrnn.TapeRereader(c, outs)
+	inSeq := lazyseq.TapeRereader(c, r.Inputs)
+	rewardSeq := lazyseq.TapeRereader(c, r.RemainingRewards())
+	oldOutSeq := lazyseq.TapeRereader(c, outs)
 	newOutSeq := t.apply(inSeq, t.Policy)
-	sampledOut := lazyrnn.TapeRereader(c, r.SampledOuts)
+	sampledOut := lazyseq.TapeRereader(c, r.SampledOuts)
 
 	// At each timestep, compute a pair <improvement, kl divergence>.
-	mappedOut := lazyrnn.MapN(func(n int, v ...anydiff.Res) anydiff.Res {
+	mappedOut := lazyseq.MapN(func(n int, v ...anydiff.Res) anydiff.Res {
 		reward := v[0]
 		oldOut := v[1]
 		newOut := v[2]
@@ -121,7 +121,7 @@ func (t *TRPO) acceptable(r *RolloutSet, grad anydiff.Grad, outs lazyrnn.Tape) b
 		return anydiff.NewConst(transposed)
 	}, rewardSeq, oldOutSeq, newOutSeq, sampledOut)
 
-	outStats := lazyrnn.Mean(mappedOut).Output()
+	outStats := lazyseq.Mean(mappedOut).Output()
 	improvement := anyvec.Sum(outStats.Slice(0, 1))
 	kl := anyvec.Sum(outStats.Slice(1, 2))
 

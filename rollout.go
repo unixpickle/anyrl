@@ -6,7 +6,7 @@ import (
 	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyvec"
-	"github.com/unixpickle/lazyrnn"
+	"github.com/unixpickle/lazyseq"
 )
 
 // A RolloutSet is a batch of recorded episodes.
@@ -17,38 +17,38 @@ import (
 type RolloutSet struct {
 	// Inputs contains the inputs to the agent at
 	// each timestep.
-	Inputs lazyrnn.Tape
+	Inputs lazyseq.Tape
 
 	// Rewards contains the immediate reward at each
 	// timestep.
-	Rewards lazyrnn.Tape
+	Rewards lazyseq.Tape
 
 	// SampledOuts contains the sampled agent action
 	// at each timestep.
-	SampledOuts lazyrnn.Tape
+	SampledOuts lazyseq.Tape
 }
 
 // PackRolloutSets joins multiple RolloutSets into one
 // larger set.
 func PackRolloutSets(rs []*RolloutSet) *RolloutSet {
 	res := &RolloutSet{}
-	fieldGetters := []func(r *RolloutSet) *lazyrnn.Tape{
-		func(r *RolloutSet) *lazyrnn.Tape {
+	fieldGetters := []func(r *RolloutSet) *lazyseq.Tape{
+		func(r *RolloutSet) *lazyseq.Tape {
 			return &r.Inputs
 		},
-		func(r *RolloutSet) *lazyrnn.Tape {
+		func(r *RolloutSet) *lazyseq.Tape {
 			return &r.Rewards
 		},
-		func(r *RolloutSet) *lazyrnn.Tape {
+		func(r *RolloutSet) *lazyseq.Tape {
 			return &r.SampledOuts
 		},
 	}
 	for _, getter := range fieldGetters {
-		var tapes []lazyrnn.Tape
+		var tapes []lazyseq.Tape
 		for _, r := range rs {
 			tapes = append(tapes, *getter(r))
 		}
-		*getter(res) = lazyrnn.PackTape(tapes)
+		*getter(res) = lazyseq.PackTape(tapes)
 	}
 	return res
 }
@@ -56,7 +56,7 @@ func PackRolloutSets(rs []*RolloutSet) *RolloutSet {
 // RemainingRewards derives a tape from r.Rewards which,
 // at each time-step, has the total reward from that
 // time-step to the end of the episode.
-func (r *RolloutSet) RemainingRewards() lazyrnn.Tape {
+func (r *RolloutSet) RemainingRewards() lazyseq.Tape {
 	var sum *anyseq.Batch
 	for batch := range r.Rewards.ReadTape(0, -1) {
 		if sum == nil {
@@ -69,7 +69,7 @@ func (r *RolloutSet) RemainingRewards() lazyrnn.Tape {
 		}
 	}
 
-	resTape, writer := lazyrnn.ReferenceTape()
+	resTape, writer := lazyseq.ReferenceTape()
 
 	for batch := range r.Rewards.ReadTape(0, -1) {
 		// Create two separate copies of the sum to
@@ -85,7 +85,7 @@ func (r *RolloutSet) RemainingRewards() lazyrnn.Tape {
 
 // TotalRewards sums the rewards for each rollout.
 func (r *RolloutSet) TotalRewards(c anyvec.Creator) anyvec.Vector {
-	return lazyrnn.SumEach(lazyrnn.TapeRereader(c, r.Rewards)).Output()
+	return lazyseq.SumEach(lazyseq.TapeRereader(c, r.Rewards)).Output()
 }
 
 // MeanReward sums the rewards for each rollout, then
@@ -103,9 +103,9 @@ func (r *RolloutSet) MeanReward(c anyvec.Creator) anyvec.Numeric {
 func RolloutRNN(c anyvec.Creator, agent anyrnn.Block, actionSampler Sampler,
 	envs ...Env) (*RolloutSet, error) {
 	// TODO: support other Tape types.
-	inputs, inputCh := lazyrnn.ReferenceTape()
-	rewards, rewardsCh := lazyrnn.ReferenceTape()
-	sampled, sampledCh := lazyrnn.ReferenceTape()
+	inputs, inputCh := lazyseq.ReferenceTape()
+	rewards, rewardsCh := lazyseq.ReferenceTape()
+	sampled, sampledCh := lazyseq.ReferenceTape()
 
 	defer func() {
 		close(inputCh)

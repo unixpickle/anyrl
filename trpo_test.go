@@ -7,7 +7,7 @@ import (
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyvec/anyvec64"
-	"github.com/unixpickle/lazyrnn"
+	"github.com/unixpickle/lazyseq"
 )
 
 func TestTRPO(t *testing.T) {
@@ -33,8 +33,8 @@ func TestTRPO(t *testing.T) {
 	grad := trpo.Run(r)
 
 	policyGrad := anydiff.NewGrad(block.Parameters()...)
-	PolicyGradient(trpo.ActionSpace, r, grad, func(in lazyrnn.Rereader) lazyrnn.Rereader {
-		return lazyrnn.Lazify(anyrnn.Map(lazyrnn.Unlazify(in), block))
+	PolicyGradient(trpo.ActionSpace, r, grad, func(in lazyseq.Rereader) lazyseq.Rereader {
+		return lazyseq.Lazify(anyrnn.Map(lazyseq.Unlazify(in), block))
 	})
 
 	if dotGrad(grad, policyGrad).(float64) < 0 {

@@ -7,7 +7,7 @@ import (
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyvec"
-	"github.com/unixpickle/lazyrnn"
+	"github.com/unixpickle/lazyseq"
 	"github.com/unixpickle/serializer"
 )
 
@@ -42,7 +42,7 @@ type NaturalPG struct {
 
 	// ApplyPolicy applies a policy to an input sequence.
 	// If nil, back-propagation through time is used.
-	ApplyPolicy func(s lazyrnn.Rereader, b anyrnn.Block) lazyrnn.Rereader
+	ApplyPolicy func(s lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader
 }
 
 // Run computes the natural gradient for the rollouts.
@@ -52,7 +52,7 @@ func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
 		return grad
 	}
 
-	PolicyGradient(n.ActionSpace, r, grad, func(in lazyrnn.Rereader) lazyrnn.Rereader {
+	PolicyGradient(n.ActionSpace, r, grad, func(in lazyseq.Rereader) lazyseq.Rereader {
 		return n.apply(in, n.Policy)
 	})
 
@@ -115,10 +115,10 @@ func (n *NaturalPG) conjugateGradients(r *RolloutSet, grad anydiff.Grad) {
 	setGrad(grad, x)
 }
 
-func (n *NaturalPG) storePolicyOutputs(c anyvec.Creator, r *RolloutSet) lazyrnn.Tape {
-	tape, writer := lazyrnn.ReferenceTape()
+func (n *NaturalPG) storePolicyOutputs(c anyvec.Creator, r *RolloutSet) lazyseq.Tape {
+	tape, writer := lazyseq.ReferenceTape()
 
-	out := n.apply(lazyrnn.TapeRereader(c, r.Inputs), n.Policy)
+	out := n.apply(lazyseq.TapeRereader(c, r.Inputs), n.Policy)
 	for outVec := range out.Forward() {
 		writer <- outVec
 	}
@@ -128,7 +128,7 @@ func (n *NaturalPG) storePolicyOutputs(c anyvec.Creator, r *RolloutSet) lazyrnn.
 }
 
 func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
-	oldOuts lazyrnn.Tape) anydiff.Grad {
+	oldOuts lazyseq.Tape) anydiff.Grad {
 	c := &anyfwd.Creator{
 		ValueCreator: creatorFromGrad(grad),
 		GradSize:     1,
@@ -137,10 +137,10 @@ func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
 	fwdBlock, paramMap := n.makeFwd(c, grad)
 	fwdIn := &makeFwdTape{Tape: r.Inputs, Creator: c}
 
-	outSeq := n.apply(lazyrnn.TapeRereader(c, fwdIn), fwdBlock)
-	klDiv := lazyrnn.Mean(lazyrnn.MapN(func(num int, v ...anydiff.Res) anydiff.Res {
+	outSeq := n.apply(lazyseq.TapeRereader(c, fwdIn), fwdBlock)
+	klDiv := lazyseq.Mean(lazyseq.MapN(func(num int, v ...anydiff.Res) anydiff.Res {
 		return n.ActionSpace.KL(v[0], v[1], num)
-	}, lazyrnn.TapeRereader(c, fwdOldOuts), outSeq))
+	}, lazyseq.TapeRereader(c, fwdOldOuts), outSeq))
 
 	newGrad := anydiff.Grad{}
 	for newParam, oldParam := range paramMap {
@@ -161,10 +161,10 @@ func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
 	return out
 }
 
-func (n *NaturalPG) apply(in lazyrnn.Rereader, b anyrnn.Block) lazyrnn.Rereader {
+func (n *NaturalPG) apply(in lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader {
 	if n.ApplyPolicy == nil {
-		cachedIn := lazyrnn.Unlazify(in)
-		return lazyrnn.Lazify(anyrnn.Map(cachedIn, b))
+		cachedIn := lazyseq.Unlazify(in)
+		return lazyseq.Lazify(anyrnn.Map(cachedIn, b))
 	} else {
 		return n.ApplyPolicy(in, b)
 	}
@@ -231,7 +231,7 @@ func MakeFwdDiff(c *anyfwd.Creator, p anyrnn.Block, g anydiff.Grad) (anyrnn.Bloc
 // makeFwdTape wraps a Tape to translate it to a forward
 // auto-diff creator.
 type makeFwdTape struct {
-	Tape    lazyrnn.Tape
+	Tape    lazyseq.Tape
 	Creator *anyfwd.Creator
 }
 
