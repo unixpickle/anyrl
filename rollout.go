@@ -1,6 +1,8 @@
 package anyrl
 
 import (
+	"sync"
+
 	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyvec"
@@ -181,13 +183,27 @@ func rolloutStep(actions *anyseq.Batch, envs []Env) (obs, rewards *anyseq.Batch,
 	}
 	actionChunkSize := actions.Packed.Len() / actions.NumPresent()
 	var actionOffset int
-	for i, e := range envs {
-		if !actions.Present[i] {
+	var splitActions []anyvec.Vector
+	var presentEnvs []Env
+	for i, pres := range actions.Present {
+		if pres {
+			action := actions.Packed.Slice(actionOffset, actionOffset+actionChunkSize)
+			actionOffset += actionChunkSize
+			splitActions = append(splitActions, action)
+			presentEnvs = append(presentEnvs, envs[i])
+		}
+	}
+
+	obsVecs, rews, dones, errs := batchStep(presentEnvs, splitActions)
+
+	var presentIdx int
+	for i, pres := range actions.Present {
+		if !pres {
 			continue
 		}
-		action := actions.Packed.Slice(actionOffset, actionOffset+actionChunkSize)
-		actionOffset += actionChunkSize
-		obsVec, rew, done, err := e.Step(action)
+		obsVec, rew, done, err := obsVecs[presentIdx], rews[presentIdx],
+			dones[presentIdx], errs[presentIdx]
+		presentIdx++
 		if err != nil {
 			return nil, nil, err
 		}
@@ -199,5 +215,31 @@ func rolloutStep(actions *anyseq.Batch, envs []Env) (obs, rewards *anyseq.Batch,
 		rewVec.AddScalar(c.MakeNumeric(rew))
 		rewards.Packed = c.Concat(rewards.Packed, rewVec)
 	}
+
+	return
+}
+
+type envStepRes struct {
+	observation anyvec.Vector
+	reward      float64
+	done        bool
+	err         error
+}
+
+func batchStep(envs []Env, actions []anyvec.Vector) (obs []anyvec.Vector,
+	rewards []float64, done []bool, err []error) {
+	obs = make([]anyvec.Vector, len(envs))
+	rewards = make([]float64, len(envs))
+	done = make([]bool, len(envs))
+	err = make([]error, len(envs))
+	var wg sync.WaitGroup
+	for i, e := range envs {
+		wg.Add(1)
+		go func(i int, e Env) {
+			defer wg.Done()
+			obs[i], rewards[i], done[i], err[i] = e.Step(actions[i])
+		}(i, e)
+	}
+	wg.Wait()
 	return
 }
