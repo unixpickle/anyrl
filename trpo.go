@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/unixpickle/anydiff"
+	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyseq"
 )
@@ -61,8 +62,9 @@ func (t *TRPO) Run(r *RolloutSet) anydiff.Grad {
 		return grad
 	}
 	c := creatorFromGrad(grad)
-	outs := t.storePolicyOutputs(c, r)
-	stepSize := t.stepSize(r, grad, outs)
+	outs, outSeq := t.storePolicyOutputs(c, r)
+	outSeq.Reuse()
+	stepSize := t.stepSize(r, grad, outSeq)
 
 	grad.Scale(stepSize)
 
@@ -76,9 +78,10 @@ func (t *TRPO) Run(r *RolloutSet) anydiff.Grad {
 	return grad
 }
 
-func (t *TRPO) stepSize(r *RolloutSet, grad anydiff.Grad, outs lazyseq.Tape) anyvec.Numeric {
+func (t *TRPO) stepSize(r *RolloutSet, grad anydiff.Grad,
+	outSeq lazyseq.Rereader) anyvec.Numeric {
 	c := creatorFromGrad(grad)
-	dotProd := dotGrad(grad, t.applyFisher(r, grad, outs))
+	dotProd := dotGrad(grad, t.applyFisher(r, grad, outSeq))
 	resVec := c.MakeVector(1)
 	resVec.AddScalar(dotProd)
 	anyvec.Pow(resVec, c.MakeNumeric(-1))
@@ -141,6 +144,27 @@ func (t *TRPO) acceptable(r *RolloutSet, grad anydiff.Grad, outs lazyseq.Tape) b
 	}
 
 	return true
+}
+
+// storePolicyOutputs evaluates the policy on the inputs
+// and stores the results to a tape.
+// It also returns a lazyseq.Reuser for the output.
+// The lazyseq.Reuser will be used, so you must call
+// Reuse() on it before using it again.
+func (n *NaturalPG) storePolicyOutputs(c anyvec.Creator, r *RolloutSet) (lazyseq.Tape,
+	lazyseq.Reuser) {
+	tape, writer := lazyseq.ReferenceTape()
+
+	out := lazyseq.MakeReuser(n.apply(lazyseq.TapeRereader(c, r.Inputs), n.Policy))
+	for outVec := range out.Forward() {
+		writer <- &anyseq.Batch{
+			Present: outVec.Present,
+			Packed:  outVec.Packed.Copy(),
+		}
+	}
+
+	close(writer)
+	return tape, out
 }
 
 func (t *TRPO) targetKL() float64 {

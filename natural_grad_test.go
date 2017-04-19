@@ -36,12 +36,14 @@ func TestFisherDeterministic(t *testing.T) {
 	for _, vec := range inGrad {
 		anyvec.Rand(vec, anyvec.Normal, nil)
 	}
-	stored := npg.storePolicyOutputs(c, r)
+	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(c, r.Inputs),
+		npg.Policy))
 
-	grad1 := npg.applyFisher(r, inGrad, stored)
+	grad1 := npg.applyFisher(r, inGrad, outSeq)
 	mag1 := dotGrad(grad1, grad1).(float64)
 	for i := 0; i < 1000; i++ {
-		grad2 := npg.applyFisher(r, inGrad, stored)
+		outSeq.Reuse()
+		grad2 := npg.applyFisher(r, inGrad, outSeq)
 		mag2 := dotGrad(grad2, grad2).(float64)
 		correlation := dotGrad(grad1, grad2).(float64) / math.Sqrt(mag1*mag2)
 		if correlation < 1-1e-3 {
@@ -62,11 +64,13 @@ func TestFisher(t *testing.T) {
 		},
 	}
 
-	npg := &NaturalPG{
-		Policy:      block,
-		Params:      block.Parameters(),
-		ActionSpace: Softmax{},
-		Iters:       14,
+	npg := &TRPO{
+		NaturalPG: NaturalPG{
+			Policy:      block,
+			Params:      block.Parameters(),
+			ActionSpace: Softmax{},
+			Iters:       14,
+		},
 	}
 
 	inGrad := anydiff.NewGrad(block.Parameters()...)
@@ -74,13 +78,14 @@ func TestFisher(t *testing.T) {
 		anyvec.Rand(vec, anyvec.Normal, nil)
 		vec.Scale(c.MakeNumeric(0.0001))
 	}
-	stored := npg.storePolicyOutputs(c, r)
+	outSeq := npg.apply(lazyseq.TapeRereader(c, r.Inputs), npg.Policy)
+	stored, _ := npg.storePolicyOutputs(c, r)
 
-	applied := npg.applyFisher(r, inGrad, stored)
+	applied := npg.applyFisher(r, inGrad, outSeq)
 	actualOutput := 0.5 * dotGrad(inGrad, applied).(float64)
 
 	inGrad.AddToVars()
-	outSeq := npg.apply(lazyseq.TapeRereader(c, r.Inputs), block)
+	outSeq = npg.apply(lazyseq.TapeRereader(c, r.Inputs), block)
 	mapped := lazyseq.MapN(func(num int, v ...anydiff.Res) anydiff.Res {
 		return npg.ActionSpace.KL(v[0], v[1], num)
 	}, lazyseq.TapeRereader(c, stored), outSeq)
@@ -120,10 +125,13 @@ func TestConjugateGradients(t *testing.T) {
 		})
 	solvedGrad := copyGrad(inGrad)
 
-	npg.conjugateGradients(r, solvedGrad)
+	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(c, r.Inputs),
+		npg.Policy))
+	npg.conjugateGradients(r, outSeq, solvedGrad)
 
 	// Check that F*solvedGrad = inGrad.
-	actualProduct := npg.applyFisher(r, solvedGrad, npg.storePolicyOutputs(c, r))
+	outSeq.Reuse()
+	actualProduct := npg.applyFisher(r, solvedGrad, outSeq)
 	expectedProduct := inGrad
 
 	if len(actualProduct) != len(expectedProduct) {
@@ -167,12 +175,13 @@ func BenchmarkFisher(b *testing.B) {
 		anyvec.Rand(vec, anyvec.Normal, nil)
 		vec.Scale(c.MakeNumeric(0.0001))
 	}
-	stored := npg.storePolicyOutputs(c, r)
+	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(c, r.Inputs),
+		npg.Policy))
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		npg.applyFisher(r, inGrad, stored)
+		npg.applyFisher(r, inGrad, outSeq)
 	}
 }
 

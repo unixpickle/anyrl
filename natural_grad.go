@@ -52,21 +52,23 @@ func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
 		return grad
 	}
 
+	var seq lazyseq.Reuser
 	PolicyGradient(n.ActionSpace, r, grad, func(in lazyseq.Rereader) lazyseq.Rereader {
-		return n.apply(in, n.Policy)
+		seq = lazyseq.MakeReuser(n.apply(in, n.Policy))
+		return seq
 	})
 
 	// TODO: add option for running CG on a subset of the
 	// total experience.
 
-	n.conjugateGradients(r, grad)
+	n.conjugateGradients(r, seq, grad)
 
 	return grad
 }
 
-func (n *NaturalPG) conjugateGradients(r *RolloutSet, grad anydiff.Grad) {
+func (n *NaturalPG) conjugateGradients(r *RolloutSet, policyOuts lazyseq.Reuser,
+	grad anydiff.Grad) {
 	c := creatorFromGrad(grad)
-	storedOuts := n.storePolicyOutputs(c, r)
 
 	// Solving "Fx = grad" for x, where F is the
 	// Fisher matrix.
@@ -86,7 +88,8 @@ func (n *NaturalPG) conjugateGradients(r *RolloutSet, grad anydiff.Grad) {
 
 	for i := 0; i < n.iters(); i++ {
 		// A*p
-		appliedProj := n.applyFisher(r, proj, storedOuts)
+		policyOuts.Reuse()
+		appliedProj := n.applyFisher(r, proj, policyOuts)
 
 		// (r dot r) / (p dot A*p)
 		alpha := quotient(c, residualMag, dotGrad(proj, appliedProj))
@@ -115,39 +118,27 @@ func (n *NaturalPG) conjugateGradients(r *RolloutSet, grad anydiff.Grad) {
 	setGrad(grad, x)
 }
 
-func (n *NaturalPG) storePolicyOutputs(c anyvec.Creator, r *RolloutSet) lazyseq.Tape {
-	tape, writer := lazyseq.ReferenceTape()
-
-	out := n.apply(lazyseq.TapeRereader(c, r.Inputs), n.Policy)
-	for outVec := range out.Forward() {
-		writer <- &anyseq.Batch{
-			Present: outVec.Present,
-			Packed:  outVec.Packed.Copy(),
-		}
-	}
-
-	close(writer)
-	return tape
-}
-
 func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
-	oldOuts lazyseq.Tape) anydiff.Grad {
+	oldOuts lazyseq.Rereader) anydiff.Grad {
 	c := &anyfwd.Creator{
 		ValueCreator: creatorFromGrad(grad),
 		GradSize:     1,
 	}
-	fwdOldOuts := &makeFwdTape{Tape: oldOuts, Creator: c}
 	fwdBlock, paramMap := n.makeFwd(c, grad)
 	fwdIn := &makeFwdTape{Tape: r.Inputs, Creator: c}
 
 	outSeq := &unfwdRereader{
 		Fwd:          n.apply(lazyseq.TapeRereader(c, fwdIn), fwdBlock),
-		Regular:      n.apply(lazyseq.TapeRereader(c, r.Inputs), n.Policy),
+		Regular:      oldOuts,
 		FwdToRegular: paramMap,
 	}
-	klDiv := lazyseq.Mean(lazyseq.MapN(func(num int, v ...anydiff.Res) anydiff.Res {
-		return n.ActionSpace.KL(v[0], v[1], num)
-	}, lazyseq.TapeRereader(c, fwdOldOuts), outSeq))
+	klSeq := lazyseq.Map(outSeq, func(v anydiff.Res, num int) anydiff.Res {
+		zeroGrad := c.ValueCreator.MakeVector(v.Output().Len())
+		constVec := v.Output().Copy()
+		constVec.(*anyfwd.Vector).Jacobian[0].Set(zeroGrad)
+		return n.ActionSpace.KL(anydiff.NewConst(constVec), v, num)
+	})
+	kl := lazyseq.Mean(klSeq)
 
 	newGrad := anydiff.Grad{}
 	for newParam, oldParam := range paramMap {
@@ -158,7 +149,7 @@ func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
 
 	one := c.MakeVector(1)
 	one.AddScalar(c.MakeNumeric(1))
-	klDiv.Propagate(one, newGrad)
+	kl.Propagate(one, newGrad)
 
 	out := anydiff.Grad{}
 	for newParam, paramGrad := range newGrad {
