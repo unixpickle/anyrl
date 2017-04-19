@@ -38,10 +38,7 @@ var BaseURLs = []string{
 var BatchSize = 32 / len(BaseURLs)
 
 const (
-	RenderEnv = true
-
-	FrameWidth  = 160
-	FrameHeight = 210
+	RenderEnv = false
 
 	NetworkSaveFile = "trained_policy"
 )
@@ -137,15 +134,19 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 		return res
 	} else {
 		log.Println("Created new network.")
-		inputSize := FrameWidth * FrameHeight * 3
 		return anyrnn.Stack{
-			// Normalize color inputs, which range in 0-255.
 			&anyrnn.LayerBlock{
-				Layer: anynet.NewAffine(creator, 1.0/128.0, -1),
+				Layer: anynet.Net{
+					PreprocessLayer{},
+
+					// Most inputs are 0, so we can amplify the effect
+					// of non-zero inputs a bit.
+					anynet.NewAffine(creator, 8, 0),
+				},
 			},
 			// Use a vanilla RNN so we can remember what we saw
 			// in the previous frame.
-			anyrnn.NewVanilla(creator, inputSize, 64, anynet.Tanh),
+			anyrnn.NewVanilla(creator, PreprocessedSize, 64, anynet.Tanh),
 			&anyrnn.LayerBlock{
 				Layer: anynet.Net{
 					anynet.NewFC(creator, 64, 32),
