@@ -57,43 +57,18 @@ func PackRolloutSets(rs []*RolloutSet) *RolloutSet {
 // at each time-step, has the total reward from that
 // time-step to the end of the episode.
 func (r *RolloutSet) RemainingRewards() lazyseq.Tape {
-	var sum *anyseq.Batch
-	for batch := range r.Rewards.ReadTape(0, -1) {
-		if sum == nil {
-			sum = &anyseq.Batch{
-				Present: batch.Present,
-				Packed:  batch.Packed.Copy(),
-			}
-		} else {
-			sum.Packed.Add(batch.Expand(sum.Present).Packed)
-		}
-	}
-
-	resTape, writer := lazyseq.ReferenceTape()
-
-	for batch := range r.Rewards.ReadTape(0, -1) {
-		// Create two separate copies of the sum to
-		// avoid modifying the batch we send.
-		writer <- sum.Reduce(batch.Present)
-		sum = sum.Reduce(batch.Present)
-		sum.Packed.Sub(batch.Packed)
-	}
-
-	close(writer)
-	return resTape
+	return RemainingRewards(r.Rewards)
 }
 
 // TotalRewards sums the rewards for each rollout.
 func (r *RolloutSet) TotalRewards(c anyvec.Creator) anyvec.Vector {
-	return lazyseq.SumEach(lazyseq.TapeRereader(c, r.Rewards)).Output()
+	return TotalRewards(c, r.Rewards)
 }
 
 // MeanReward sums the rewards for each rollout, then
 // computes the mean of the sums.
 func (r *RolloutSet) MeanReward(c anyvec.Creator) anyvec.Numeric {
-	total := r.TotalRewards(c)
-	total.Scale(total.Creator().MakeNumeric(1 / float64(total.Len())))
-	return anyvec.Sum(total)
+	return MeanReward(c, r.Rewards)
 }
 
 // RolloutRNN performs rollouts using an RNN.

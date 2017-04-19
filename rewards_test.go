@@ -10,7 +10,7 @@ import (
 	"github.com/unixpickle/lazyseq"
 )
 
-func TestRolloutRemainingRewards(t *testing.T) {
+func TestRemainingRewards(t *testing.T) {
 	c := anyvec64.DefaultCreator{}
 
 	tapeIn, writer := lazyseq.ReferenceTape()
@@ -28,7 +28,7 @@ func TestRolloutRemainingRewards(t *testing.T) {
 	}
 	close(writer)
 
-	tapeOut := (&RolloutSet{Rewards: tapeIn}).RemainingRewards()
+	tapeOut := RemainingRewards(tapeIn)
 	expected := []*anyseq.Batch{
 		{
 			Present: []bool{true, false, true},
