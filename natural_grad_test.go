@@ -142,6 +142,40 @@ func TestConjugateGradients(t *testing.T) {
 	}
 }
 
+func BenchmarkFisher(b *testing.B) {
+	c := anyvec64.DefaultCreator{}
+	r := rolloutsForTest(c)
+
+	block := &anyrnn.LayerBlock{
+		Layer: anynet.Net{
+			anynet.NewFC(c, 3, 256),
+			anynet.Tanh,
+			anynet.NewFC(c, 256, 256),
+			anynet.Tanh,
+			anynet.NewFC(c, 256, 30),
+		},
+	}
+
+	npg := &NaturalPG{
+		Policy:      block,
+		Params:      block.Parameters(),
+		ActionSpace: Softmax{},
+	}
+
+	inGrad := anydiff.NewGrad(block.Parameters()...)
+	for _, vec := range inGrad {
+		anyvec.Rand(vec, anyvec.Normal, nil)
+		vec.Scale(c.MakeNumeric(0.0001))
+	}
+	stored := npg.storePolicyOutputs(c, r)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		npg.applyFisher(r, inGrad, stored)
+	}
+}
+
 func rolloutsForTest(c anyvec.Creator) *RolloutSet {
 	inputs, inputWriter := lazyseq.ReferenceTape()
 	rewards, rewardWriter := lazyseq.ReferenceTape()

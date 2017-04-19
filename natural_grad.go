@@ -137,7 +137,11 @@ func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
 	fwdBlock, paramMap := n.makeFwd(c, grad)
 	fwdIn := &makeFwdTape{Tape: r.Inputs, Creator: c}
 
-	outSeq := n.apply(lazyseq.TapeRereader(c, fwdIn), fwdBlock)
+	outSeq := &unfwdRereader{
+		Fwd:          n.apply(lazyseq.TapeRereader(c, fwdIn), fwdBlock),
+		Regular:      n.apply(lazyseq.TapeRereader(c, r.Inputs), n.Policy),
+		FwdToRegular: paramMap,
+	}
 	klDiv := lazyseq.Mean(lazyseq.MapN(func(num int, v ...anydiff.Res) anydiff.Res {
 		return n.ActionSpace.KL(v[0], v[1], num)
 	}, lazyseq.TapeRereader(c, fwdOldOuts), outSeq))
@@ -249,6 +253,78 @@ func (m *makeFwdTape) ReadTape(start, end int) <-chan *anyseq.Batch {
 		close(res)
 	}()
 	return res
+}
+
+// unfwdRereader is a lazyseq.Rereader used for computing
+// Fisher-vector products efficiently.
+// When the Fisher-vector product is computed, backprop
+// through the network will produce a zero gradient (but
+// the gradient has a non-zero derivative).
+// This is because the upstream vectors are all zero (with
+// non-zero derivatives).
+// Thus, we can optimize the back-propagation by avoiding
+// forward auto-diff for the backward pass.
+type unfwdRereader struct {
+	Fwd     lazyseq.Rereader
+	Regular lazyseq.Rereader
+
+	FwdToRegular map[*anydiff.Var]*anydiff.Var
+}
+
+func (u *unfwdRereader) Creator() anyvec.Creator {
+	return u.Fwd.Creator()
+}
+
+func (u *unfwdRereader) Forward() <-chan *anyseq.Batch {
+	return u.Fwd.Forward()
+}
+
+func (u *unfwdRereader) Vars() anydiff.VarSet {
+	return u.Fwd.Vars()
+}
+
+func (u *unfwdRereader) Reread(start, end int) <-chan *anyseq.Batch {
+	return u.Fwd.Reread(start, end)
+}
+
+func (u *unfwdRereader) Propagate(upstream <-chan *anyseq.Batch, grad lazyseq.Grad) {
+	for _ = range u.Forward() {
+	}
+
+	surrogateDownstream := make(chan *anyseq.Batch, 1)
+	go func() {
+		for in := range upstream {
+			surrogateDownstream <- &anyseq.Batch{
+				Present: in.Present,
+				Packed:  in.Packed.(*anyfwd.Vector).Jacobian[0],
+			}
+		}
+		close(surrogateDownstream)
+	}()
+
+	u.Regular.Propagate(surrogateDownstream, &surrogateGrad{
+		OrigGrad:     grad,
+		FwdToRegular: u.FwdToRegular,
+	})
+}
+
+type surrogateGrad struct {
+	OrigGrad     lazyseq.Grad
+	FwdToRegular map[*anydiff.Var]*anydiff.Var
+}
+
+func (s *surrogateGrad) Use(f func(g anydiff.Grad)) {
+	s.OrigGrad.Use(func(g anydiff.Grad) {
+		surrogateGrad := anydiff.Grad{}
+		for variable, vec := range g {
+			if regularVar, ok := s.FwdToRegular[variable]; !ok {
+				panic("superfluous gradient variable")
+			} else {
+				surrogateGrad[regularVar] = vec.(*anyfwd.Vector).Jacobian[0]
+			}
+		}
+		f(surrogateGrad)
+	})
 }
 
 func copyGrad(g anydiff.Grad) anydiff.Grad {
