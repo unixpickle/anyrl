@@ -120,7 +120,10 @@ func (n *NaturalPG) storePolicyOutputs(c anyvec.Creator, r *RolloutSet) lazyseq.
 
 	out := n.apply(lazyseq.TapeRereader(c, r.Inputs), n.Policy)
 	for outVec := range out.Forward() {
-		writer <- outVec
+		writer <- &anyseq.Batch{
+			Present: outVec.Present,
+			Packed:  outVec.Packed.Copy(),
+		}
 	}
 
 	close(writer)
