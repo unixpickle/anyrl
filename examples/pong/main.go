@@ -139,6 +139,10 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 		log.Println("Created new network.")
 		inputSize := FrameWidth * FrameHeight * 3
 		return anyrnn.Stack{
+			// Normalize color inputs, which range in 0-255.
+			&anyrnn.LayerBlock{
+				Layer: anynet.NewAffine(creator, 1.0/128.0, -1),
+			},
 			// Use a vanilla RNN so we can remember what we saw
 			// in the previous frame.
 			anyrnn.NewVanilla(creator, inputSize, 64, anynet.Tanh),
