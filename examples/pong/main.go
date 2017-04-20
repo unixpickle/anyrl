@@ -29,12 +29,12 @@ import (
 //
 var BaseURLs = []string{
 	"http://localhost:5000",
-	//"http://localhost:5001",
-	//"http://localhost:5002",
-	//"http://localhost:5003",
+	"http://localhost:5001",
+	"http://localhost:5002",
+	"http://localhost:5003",
 }
 
-var BatchSize = 1 / len(BaseURLs)
+var BatchSize = 32 / len(BaseURLs)
 
 const (
 	RenderEnv = false
