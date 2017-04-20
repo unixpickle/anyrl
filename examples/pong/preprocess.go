@@ -1,9 +1,8 @@
 package main
 
 import (
-	"github.com/unixpickle/anydiff"
+	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
-	"github.com/unixpickle/serializer"
 )
 
 const (
@@ -13,36 +12,35 @@ const (
 	PreprocessedSize = 80 * 80
 )
 
-func init() {
-	serializer.RegisterTypedDeserializer(PreprocessLayer{}.SerializerType(),
-		DeserializePreprocessLayer)
+type PreprocessEnv struct {
+	Env        anyrl.Env
+	Subsampler anyvec.Mapper
+	Last       anyvec.Vector
 }
 
-type PreprocessLayer struct{}
-
-func DeserializePreprocessLayer(d []byte) (PreprocessLayer, error) {
-	return PreprocessLayer{}, nil
+func (p *PreprocessEnv) Reset() (observation anyvec.Vector, err error) {
+	p.Last, err = p.Env.Reset()
+	p.Last = p.simplifyImage(p.Last)
+	return p.Last, err
 }
 
-func (p PreprocessLayer) Apply(in anydiff.Res, n int) anydiff.Res {
-	cr := in.Output().Creator()
-	subsampler := makeInputSubsampler(cr)
-	imgSize := FrameWidth * FrameHeight * 3
-	var subsampled []anyvec.Vector
-	for i := 0; i < n; i++ {
-		inImg := in.Output().Slice(i*imgSize, (i+1)*imgSize)
-		outImg := preprocessImage(subsampler, inImg)
-		subsampled = append(subsampled, outImg)
+func (p *PreprocessEnv) Step(action anyvec.Vector) (observation anyvec.Vector,
+	reward float64, done bool, err error) {
+	observation, reward, done, err = p.Env.Step(action)
+	if observation != nil {
+		observation = p.simplifyImage(observation)
+		backup := observation.Copy()
+		observation.Sub(p.Last)
+		p.Last = backup
 	}
-	return anydiff.NewConst(cr.Concat(subsampled...))
+	return
 }
 
-func (p PreprocessLayer) SerializerType() string {
-	return "github.com/unixpickle/anyrl/examples/pong.preprocessLayer"
-}
-
-func (p PreprocessLayer) Serialize() ([]byte, error) {
-	return []byte{}, nil
+func (p *PreprocessEnv) simplifyImage(in anyvec.Vector) anyvec.Vector {
+	if p.Subsampler == nil {
+		p.Subsampler = makeInputSubsampler(in.Creator())
+	}
+	return preprocessImage(p.Subsampler, in)
 }
 
 func preprocessImage(sampler anyvec.Mapper, image anyvec.Vector) anyvec.Vector {

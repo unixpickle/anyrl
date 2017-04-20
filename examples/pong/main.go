@@ -12,7 +12,6 @@ import (
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec32"
 	"github.com/unixpickle/lazyseq"
-	"github.com/unixpickle/lazyseq/lazyrnn"
 	"github.com/unixpickle/rip"
 	"github.com/unixpickle/serializer"
 )
@@ -30,12 +29,12 @@ import (
 //
 var BaseURLs = []string{
 	"http://localhost:5000",
-	"http://localhost:5001",
-	"http://localhost:5002",
-	"http://localhost:5003",
+	//"http://localhost:5001",
+	//"http://localhost:5002",
+	//"http://localhost:5003",
 }
 
-var BatchSize = 32 / len(BaseURLs)
+var BatchSize = 1 / len(BaseURLs)
 
 const (
 	RenderEnv = false
@@ -63,7 +62,7 @@ func main() {
 		env, err := anyrl.GymEnv(creator, client, id, RenderEnv)
 		must(err)
 
-		envs = append(envs, env)
+		envs = append(envs, &PreprocessEnv{Env: env})
 	}
 
 	// Create a neural network policy.
@@ -77,9 +76,9 @@ func main() {
 			Params:      policy.Parameters(),
 			ActionSpace: actionSampler,
 
-			// Apply the RNN in a low-memory way.
 			ApplyPolicy: func(seq lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader {
-				out := lazyrnn.FixedHSM(1, true, seq, b)
+				// Utilize the fact that the model is feed-forward.
+				out := lazyseq.Map(seq, b.(*anyrnn.LayerBlock).Layer.Apply)
 
 				// Stores the RNN outputs in memory, but nothing else.
 				return lazyseq.Lazify(lazyseq.Unlazify(out))
@@ -127,32 +126,23 @@ func main() {
 	must(serializer.SaveAny(NetworkSaveFile, policy))
 }
 
-func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
-	var res anyrnn.Stack
+func loadOrCreateNetwork(creator anyvec.Creator) *anyrnn.LayerBlock {
+	var res *anyrnn.LayerBlock
 	if err := serializer.LoadAny(NetworkSaveFile, &res); err == nil {
 		log.Println("Loaded network from file.")
 		return res
 	} else {
 		log.Println("Created new network.")
-		return anyrnn.Stack{
-			&anyrnn.LayerBlock{
-				Layer: anynet.Net{
-					PreprocessLayer{},
+		return &anyrnn.LayerBlock{
+			Layer: anynet.Net{
+				// Most inputs are 0, so we can amplify the effect
+				// of non-zero inputs a bit.
+				anynet.NewAffine(creator, 8, 0),
 
-					// Most inputs are 0, so we can amplify the effect
-					// of non-zero inputs a bit.
-					anynet.NewAffine(creator, 8, 0),
-				},
-			},
-			// Use a vanilla RNN so we can remember what we saw
-			// in the previous frame.
-			anyrnn.NewVanilla(creator, PreprocessedSize, 64, anynet.Tanh),
-			&anyrnn.LayerBlock{
-				Layer: anynet.Net{
-					anynet.NewFC(creator, 64, 32),
-					anynet.Tanh,
-					anynet.NewFCZero(creator, 32, 6),
-				},
+				// Fully-connected network with 256 hidden units.
+				anynet.NewFC(creator, PreprocessedSize, 256),
+				anynet.Tanh,
+				anynet.NewFC(creator, 256, 6),
 			},
 		}
 	}
