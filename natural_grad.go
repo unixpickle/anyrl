@@ -1,8 +1,6 @@
 package anyrl
 
 import (
-	"reflect"
-
 	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anydiff/anyfwd"
 	"github.com/unixpickle/anydiff/anyseq"
@@ -84,6 +82,7 @@ func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
 func (n *NaturalPG) conjugateGradients(r *RolloutSet, policyOuts lazyseq.Reuser,
 	grad anydiff.Grad) {
 	c := creatorFromGrad(grad)
+	ops := c.NumOps()
 
 	// Solving "Fx = grad" for x, where F is the
 	// Fisher matrix.
@@ -107,7 +106,7 @@ func (n *NaturalPG) conjugateGradients(r *RolloutSet, policyOuts lazyseq.Reuser,
 		appliedProj := n.applyFisher(r, proj, policyOuts)
 
 		// (r dot r) / (p dot A*p)
-		alpha := quotient(c, residualMag, dotGrad(proj, appliedProj))
+		alpha := ops.Div(residualMag, dotGrad(proj, appliedProj))
 
 		// x = x + alpha*p
 		alphaProj := copyGrad(proj)
@@ -120,7 +119,7 @@ func (n *NaturalPG) conjugateGradients(r *RolloutSet, policyOuts lazyseq.Reuser,
 
 		// (newR dot newR) / (r dot r)
 		newResidualMag := dotGrad(residual, residual)
-		beta := quotient(c, newResidualMag, residualMag)
+		beta := ops.Div(newResidualMag, residualMag)
 		residualMag = newResidualMag
 
 		// p = beta*p + r
@@ -352,19 +351,12 @@ func zeroGrad(g anydiff.Grad) anydiff.Grad {
 
 func dotGrad(g1, g2 anydiff.Grad) anyvec.Numeric {
 	c := creatorFromGrad(g1)
-	sum := c.MakeVector(1)
+	ops := c.NumOps()
+	sum := c.MakeNumeric(0)
 	for variable, grad := range g1 {
-		sum.AddScalar(grad.Dot(g2[variable]))
+		sum = ops.Add(sum, grad.Dot(g2[variable]))
 	}
-	return anyvec.Sum(sum)
-}
-
-func quotient(c anyvec.Creator, num, denom anyvec.Numeric) anyvec.Numeric {
-	vec := c.MakeVector(1)
-	vec.AddScalar(denom)
-	anyvec.Pow(vec, c.MakeNumeric(-1))
-	vec.Scale(num)
-	return anyvec.Sum(vec)
+	return sum
 }
 
 func addToGrad(dst, src anydiff.Grad) {
@@ -388,7 +380,9 @@ func setGrad(dst, src anydiff.Grad) {
 func allZeros(grad anydiff.Grad) bool {
 	for _, x := range grad {
 		sum := anyvec.AbsSum(x)
-		if !reflect.DeepEqual(sum, x.Creator().MakeNumeric(0)) {
+		zero := x.Creator().MakeNumeric(0)
+		ops := x.Creator().NumOps()
+		if !ops.Identical(sum, zero) {
 			return false
 		}
 	}
