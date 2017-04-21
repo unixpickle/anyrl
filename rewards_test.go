@@ -43,6 +43,57 @@ func TestRemainingRewards(t *testing.T) {
 			Packed:  c.MakeVectorData([]float64{2}),
 		},
 	}
+	testTapeEquiv(t, tapeOut, expected)
+}
+
+func TestRepeatedTotalRewards(t *testing.T) {
+	c := anyvec64.DefaultCreator{}
+
+	tapeIn, writer := lazyseq.ReferenceTape()
+	writer <- &anyseq.Batch{
+		Present: []bool{true, false, true, true},
+		Packed:  c.MakeVectorData([]float64{1, 2, -1}),
+	}
+	writer <- &anyseq.Batch{
+		Present: []bool{true, false, true, true},
+		Packed:  c.MakeVectorData([]float64{2, -1, -1}),
+	}
+	writer <- &anyseq.Batch{
+		Present: []bool{true, false, false, true},
+		Packed:  c.MakeVectorData([]float64{3, -2}),
+	}
+	writer <- &anyseq.Batch{
+		Present: []bool{true, false, false, false},
+		Packed:  c.MakeVectorData([]float64{1}),
+	}
+	close(writer)
+
+	// Sums: 7 1 -4; mean=1.33333; std=4.4969
+	// Normalized:  1.260131  -0.074125  -1.186005
+
+	tapeOut := RepeatedTotalRewards(tapeIn, true)
+	expected := []*anyseq.Batch{
+		{
+			Present: []bool{true, false, true, true},
+			Packed:  c.MakeVectorData([]float64{1.260131, -0.074125, -1.186005}),
+		},
+		{
+			Present: []bool{true, false, true, true},
+			Packed:  c.MakeVectorData([]float64{1.260131, -0.074125, -1.186005}),
+		},
+		{
+			Present: []bool{true, false, false, true},
+			Packed:  c.MakeVectorData([]float64{1.260131, -1.186005}),
+		},
+		{
+			Present: []bool{true, false, false, false},
+			Packed:  c.MakeVectorData([]float64{1.260131}),
+		},
+	}
+	testTapeEquiv(t, tapeOut, expected)
+}
+
+func testTapeEquiv(t *testing.T, tapeOut lazyseq.Tape, expected []*anyseq.Batch) {
 	actual := tapeOut.ReadTape(0, -1)
 	for i, x := range expected {
 		a := <-actual
