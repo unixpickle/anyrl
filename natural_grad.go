@@ -1,6 +1,8 @@
 package anyrl
 
 import (
+	"reflect"
+
 	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anydiff/anyfwd"
 	"github.com/unixpickle/anydiff/anyseq"
@@ -43,20 +45,33 @@ type NaturalPG struct {
 	// ApplyPolicy applies a policy to an input sequence.
 	// If nil, back-propagation through time is used.
 	ApplyPolicy func(s lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader
+
+	// ActionJudger is used to judge actions.
+	//
+	// If nil, TotalJudger is used.
+	ActionJudger ActionJudger
 }
 
 // Run computes the natural gradient for the rollouts.
 func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
-	grad := anydiff.NewGrad(n.Params...)
-	if len(grad) == 0 {
+	var seq lazyseq.Reuser
+	pg := &PG{
+		Policy: func(in lazyseq.Rereader) lazyseq.Rereader {
+			seq = lazyseq.MakeReuser(n.apply(in, n.Policy))
+			return seq
+		},
+		Params:       n.Params,
+		LogProber:    n.ActionSpace,
+		ActionJudger: n.ActionJudger,
+	}
+	grad := pg.Run(r)
+
+	// We check for an all-zero gradient because that is
+	// a fairly common case (if all rollouts were optimal,
+	// the gradient may be 0).
+	if len(grad) == 0 || allZeros(grad) {
 		return grad
 	}
-
-	var seq lazyseq.Reuser
-	PolicyGradient(n.ActionSpace, r, grad, func(in lazyseq.Rereader) lazyseq.Rereader {
-		seq = lazyseq.MakeReuser(n.apply(in, n.Policy))
-		return seq
-	})
 
 	// TODO: add option for running CG on a subset of the
 	// total experience.
@@ -368,4 +383,14 @@ func setGrad(dst, src anydiff.Grad) {
 	for variable, dstVec := range dst {
 		dstVec.Set(src[variable])
 	}
+}
+
+func allZeros(grad anydiff.Grad) bool {
+	for _, x := range grad {
+		sum := anyvec.AbsSum(x)
+		if !reflect.DeepEqual(sum, x.Creator().MakeNumeric(0)) {
+			return false
+		}
+	}
+	return true
 }

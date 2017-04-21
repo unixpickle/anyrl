@@ -60,8 +60,6 @@ func main() {
 			Params:      policy.Parameters(),
 			ActionSpace: actionSampler,
 		},
-		// This is akin to the learning rate.
-		TargetKL: 0.005,
 	}
 
 	for batchIdx := 0; batchIdx < NumBatches; batchIdx++ {

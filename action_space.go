@@ -17,13 +17,11 @@ type Sampler interface {
 	Sample(params anyvec.Vector, batchSize int) anyvec.Vector
 }
 
-// ActionSpace is a parameterized action space probability
-// distribution.
+// A LogProber can compute the log-likelihood of a given
+// output of a parametric distribution.
 //
 // For an example, see Softmax.
-type ActionSpace interface {
-	Sampler
-
+type LogProber interface {
 	// LogProb produces, for each parameter-output pair
 	// in the batch, a log-probability of the parameters
 	// producing that output.
@@ -32,6 +30,15 @@ type ActionSpace interface {
 	// the density rather than of the probability.
 	LogProb(params anydiff.Res, output anyvec.Vector,
 		batchSize int) anydiff.Res
+}
+
+// ActionSpace is a parameterized action space probability
+// distribution.
+//
+// For an example, see Softmax.
+type ActionSpace interface {
+	Sampler
+	LogProber
 
 	// KL computes the KL divergence between action space
 	// distributions, given the parameters for each.

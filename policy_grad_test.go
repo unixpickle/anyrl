@@ -10,7 +10,7 @@ import (
 	"github.com/unixpickle/lazyseq"
 )
 
-func TestRemainingRewards(t *testing.T) {
+func TestQJudger(t *testing.T) {
 	c := anyvec64.DefaultCreator{}
 
 	tapeIn, writer := lazyseq.ReferenceTape()
@@ -28,7 +28,7 @@ func TestRemainingRewards(t *testing.T) {
 	}
 	close(writer)
 
-	tapeOut := RemainingRewards(tapeIn)
+	tapeOut := QJudger{}.JudgeActions(&RolloutSet{Rewards: tapeIn})
 	expected := []*anyseq.Batch{
 		{
 			Present: []bool{true, false, true},
@@ -46,7 +46,7 @@ func TestRemainingRewards(t *testing.T) {
 	testTapeEquiv(t, tapeOut, expected)
 }
 
-func TestRepeatedTotalRewards(t *testing.T) {
+func TestTotalJudger(t *testing.T) {
 	c := anyvec64.DefaultCreator{}
 
 	tapeIn, writer := lazyseq.ReferenceTape()
@@ -71,7 +71,8 @@ func TestRepeatedTotalRewards(t *testing.T) {
 	// Sums: 7 1 -4; mean=1.33333; std=4.4969
 	// Normalized:  1.260131  -0.074125  -1.186005
 
-	tapeOut := RepeatedTotalRewards(tapeIn, true)
+	judger := &TotalJudger{Normalize: true}
+	tapeOut := judger.JudgeActions(&RolloutSet{Rewards: tapeIn})
 	expected := []*anyseq.Batch{
 		{
 			Present: []bool{true, false, true, true},

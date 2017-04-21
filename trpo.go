@@ -97,7 +97,7 @@ func (t *TRPO) acceptable(r *RolloutSet, grad anydiff.Grad, outs lazyseq.Tape) b
 
 	c := creatorFromGrad(grad)
 	inSeq := lazyseq.TapeRereader(c, r.Inputs)
-	rewardSeq := lazyseq.TapeRereader(c, r.RemainingRewards())
+	rewardSeq := lazyseq.TapeRereader(c, t.actionJudger().JudgeActions(r))
 	oldOutSeq := lazyseq.TapeRereader(c, outs)
 	newOutSeq := t.apply(inSeq, t.Policy)
 	sampledOut := lazyseq.TapeRereader(c, r.SampledOuts)
@@ -202,5 +202,13 @@ func (t *TRPO) backupParams() []anyvec.Vector {
 func (t *TRPO) restoreParams(backup []anyvec.Vector) {
 	for i, x := range backup {
 		t.Params[i].Vector.Set(x)
+	}
+}
+
+func (t *TRPO) actionJudger() ActionJudger {
+	if t.ActionJudger == nil {
+		return &TotalJudger{Normalize: true}
+	} else {
+		return t.ActionJudger
 	}
 }

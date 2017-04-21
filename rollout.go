@@ -53,13 +53,6 @@ func PackRolloutSets(rs []*RolloutSet) *RolloutSet {
 	return res
 }
 
-// RemainingRewards derives a tape from r.Rewards which,
-// at each time-step, has the total reward from that
-// time-step to the end of the episode.
-func (r *RolloutSet) RemainingRewards() lazyseq.Tape {
-	return RemainingRewards(r.Rewards)
-}
-
 // TotalRewards sums the rewards for each rollout.
 func (r *RolloutSet) TotalRewards(c anyvec.Creator) anyvec.Vector {
 	return TotalRewards(c, r.Rewards)
