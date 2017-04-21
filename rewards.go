@@ -52,26 +52,3 @@ func MeanReward(c anyvec.Creator, rewards lazyseq.Tape) anyvec.Numeric {
 	total.Scale(total.Creator().MakeNumeric(1 / float64(total.Len())))
 	return anyvec.Sum(total)
 }
-
-// CenterRewards subtracts the mean reward.
-func CenterRewards(c anyvec.Creator, rewards lazyseq.Tape) lazyseq.Tape {
-	mean := MeanReward(c, rewards)
-	negMeanVec := c.MakeVector(1)
-	negMeanVec.AddScalar(mean)
-	negMeanVec.Scale(c.MakeNumeric(-1))
-	negMean := anyvec.Sum(negMeanVec)
-
-	resTape, writer := lazyseq.ReferenceTape()
-
-	for batch := range rewards.ReadTape(0, -1) {
-		newBatch := &anyseq.Batch{
-			Present: batch.Present,
-			Packed:  batch.Packed.Copy(),
-		}
-		newBatch.Packed.AddScalar(negMean)
-		writer <- newBatch
-	}
-
-	close(writer)
-	return resTape
-}
