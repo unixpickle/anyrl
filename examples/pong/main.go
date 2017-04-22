@@ -126,7 +126,7 @@ func loadOrCreateNetwork(creator anyvec.Creator) *anyrnn.LayerBlock {
 				// Fully-connected network with 256 hidden units.
 				anynet.NewFC(creator, PreprocessedSize, 256),
 				anynet.Tanh,
-				anynet.NewFC(creator, 256, 6),
+				anynet.NewFCZero(creator, 256, 6),
 			},
 		}
 	}
