@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	gym "github.com/openai/gym-http-api/binding-go"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/essentials"
+	gym "github.com/unixpickle/gym-socket-api/binding-go"
 )
 
 // Env is an instance of an RL environment.
@@ -17,8 +17,7 @@ type Env interface {
 }
 
 type gymEnv struct {
-	client *gym.Client
-	id     gym.InstanceID
+	env    gym.Env
 	render bool
 
 	actConv gymSpaceConverter
@@ -29,14 +28,16 @@ type gymEnv struct {
 //
 // This will fail if the instance requires an unsupported
 // space type or if it fails to fetch space info.
-func GymEnv(c anyvec.Creator, client *gym.Client,
-	id gym.InstanceID, render bool) (env Env, err error) {
+//
+// If render is true, then the environment will be
+// graphically rendered after every step.
+func GymEnv(c anyvec.Creator, e gym.Env, render bool) (env Env, err error) {
 	defer essentials.AddCtxTo("create gym Env", &err)
-	actionSpace, err := client.ActionSpace(id)
+	actionSpace, err := e.ActionSpace()
 	if err != nil {
 		return nil, err
 	}
-	obsSpace, err := client.ObservationSpace(id)
+	obsSpace, err := e.ObservationSpace()
 	if err != nil {
 		return nil, err
 	}
@@ -49,8 +50,7 @@ func GymEnv(c anyvec.Creator, client *gym.Client,
 		return nil, err
 	}
 	return &gymEnv{
-		client:  client,
-		id:      id,
+		env:     e,
 		actConv: actConv,
 		obsConv: obsConv,
 		render:  render,
@@ -59,9 +59,14 @@ func GymEnv(c anyvec.Creator, client *gym.Client,
 
 func (g *gymEnv) Reset() (obsVec anyvec.Vector, err error) {
 	defer essentials.AddCtxTo("reset gym Env", &err)
-	obs, err := g.client.Reset(g.id)
+	obs, err := g.env.Reset()
 	if err != nil {
 		return nil, err
+	}
+	if g.render {
+		if err := g.env.Render(); err != nil {
+			return nil, err
+		}
 	}
 	return g.obsConv.FromGym(obs)
 }
@@ -70,10 +75,15 @@ func (g *gymEnv) Step(action anyvec.Vector) (obsVec anyvec.Vector, reward float6
 	done bool, err error) {
 	defer essentials.AddCtxTo("step gym Env", &err)
 	gymAction := g.actConv.ToGym(action)
-	var obs interface{}
-	obs, reward, done, _, err = g.client.Step(g.id, gymAction, g.render)
+	var obs gym.Obs
+	obs, reward, done, _, err = g.env.Step(gymAction)
 	if err != nil {
 		return
+	}
+	if g.render {
+		if err = g.env.Render(); err != nil {
+			return
+		}
 	}
 	obsVec, err = g.obsConv.FromGym(obs)
 	return
@@ -81,17 +91,17 @@ func (g *gymEnv) Step(action anyvec.Vector) (obsVec anyvec.Vector, reward float6
 
 type gymSpaceConverter interface {
 	ToGym(in anyvec.Vector) interface{}
-	FromGym(in interface{}) (anyvec.Vector, error)
+	FromGym(in gym.Obs) (anyvec.Vector, error)
 }
 
 func converterForSpace(c anyvec.Creator, s *gym.Space) (gymSpaceConverter, error) {
-	switch s.Name {
+	switch s.Type {
 	case "Box":
 		return &boxSpaceConverter{Creator: c}, nil
 	case "Discrete":
 		return &discreteSpaceConverter{Creator: c, N: s.N}, nil
 	default:
-		return nil, errors.New("unsupported space: " + s.Name)
+		return nil, errors.New("unsupported space: " + s.Type)
 	}
 }
 
@@ -114,25 +124,12 @@ func (b *boxSpaceConverter) ToGym(in anyvec.Vector) interface{} {
 	}
 }
 
-func (b *boxSpaceConverter) FromGym(in interface{}) (anyvec.Vector, error) {
-	switch in := in.(type) {
-	case []float64:
-		return b.Creator.MakeVectorData(b.Creator.MakeNumericList(in)), nil
-	case [][]float64:
-		var joined []float64
-		for _, x := range in {
-			joined = append(joined, x...)
-		}
-		return b.FromGym(joined)
-	case [][][]float64:
-		var joined [][]float64
-		for _, x := range in {
-			joined = append(joined, x...)
-		}
-		return b.FromGym(joined)
-	default:
-		return nil, fmt.Errorf("unexpected observation type: %T", in)
+func (b *boxSpaceConverter) FromGym(in gym.Obs) (anyvec.Vector, error) {
+	vec, err := gym.Flatten(in)
+	if err != nil {
+		return nil, err
 	}
+	return b.Creator.MakeVectorData(b.Creator.MakeNumericList(vec)), nil
 }
 
 type discreteSpaceConverter struct {
@@ -144,20 +141,12 @@ func (d *discreteSpaceConverter) ToGym(in anyvec.Vector) interface{} {
 	return anyvec.MaxIndex(in)
 }
 
-func (d *discreteSpaceConverter) FromGym(in interface{}) (anyvec.Vector, error) {
-	var inInt int
-	switch in := in.(type) {
-	case int:
-		inInt = in
-	case float64:
-		inInt = int(in)
-	default:
-		return nil, fmt.Errorf("unexpected observation type: %T", in)
-	}
-	if inInt < 0 || inInt >= d.N {
-		return nil, fmt.Errorf("discrete observation out of bounds: %d", inInt)
+func (d *discreteSpaceConverter) FromGym(in gym.Obs) (anyvec.Vector, error) {
+	var num int
+	if err := in.Unmarshal(&num); err != nil {
+		return nil, err
 	}
 	out := make([]float64, d.N)
-	out[inInt] = 1
+	out[num] = 1
 	return d.Creator.MakeVectorData(d.Creator.MakeNumericList(out)), nil
 }

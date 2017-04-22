@@ -5,36 +5,22 @@ import (
 	"log"
 	"sync"
 
-	gym "github.com/openai/gym-http-api/binding-go"
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec32"
+	gym "github.com/unixpickle/gym-socket-api/binding-go"
 	"github.com/unixpickle/lazyseq"
 	"github.com/unixpickle/rip"
 	"github.com/unixpickle/serializer"
 )
 
-// It is recommended that you launch multiple instances
-// of the HTTP server for optimal performance.
-//
-// In Bash, you can do this via:
-//
-//     $ for i in 500{0..3}; do python gym_http_server.py -p $i & done
-//
-// Then, you can kill the tasks via:
-//
-//     $ jobs -p | xargs kill
-//
-var BaseURLs = []string{
-	"http://localhost:5000",
-	"http://localhost:5001",
-	"http://localhost:5002",
-	"http://localhost:5003",
-}
-
-var BatchSize = 32 / len(BaseURLs)
+const (
+	Host         = "localhost:5001"
+	ParallelEnvs = 8
+	BatchSize    = 32 / ParallelEnvs
+)
 
 const (
 	RenderEnv = false
@@ -49,17 +35,15 @@ func main() {
 	// Create multiple environment instances so that we
 	// can record multiple episodes at once.
 	var envs []anyrl.Env
-	for _, baseURL := range BaseURLs {
+	for i := 0; i < ParallelEnvs; i++ {
 		// Connect to gym server.
-		client, err := gym.NewClient(baseURL)
+		client, err := gym.Make(Host, "Pong-v0")
 		must(err)
 
-		id, err := client.Create("Pong-v0")
-		must(err)
-		defer client.Close(id)
+		defer client.Close()
 
 		// Create an anyrl.Env from our gym environment.
-		env, err := anyrl.GymEnv(creator, client, id, RenderEnv)
+		env, err := anyrl.GymEnv(creator, client, RenderEnv)
 		must(err)
 
 		envs = append(envs, &PreprocessEnv{Env: env})

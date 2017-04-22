@@ -2,39 +2,37 @@ package main
 
 import (
 	"log"
-	"os"
-	"path/filepath"
 
-	gym "github.com/openai/gym-http-api/binding-go"
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec/anyvec32"
+	gym "github.com/unixpickle/gym-socket-api/binding-go"
 )
 
 const (
-	BaseURL          = "http://localhost:5000"
+	Host             = "localhost:5001"
 	RolloutsPerBatch = 30
 	NumBatches       = 50
-	RenderEnv        = false
+
+	// Set to true if you want to watch the AI learn.
+	// Makes everything very slow.
+	RenderEnv = false
+
+	// Set to true if you plan to upload the monitor
+	// to the website.
+	CaptureVideo = false
 )
 
 func main() {
 	// Connect to gym server.
-	client, err := gym.NewClient(BaseURL)
+	client, err := gym.Make(Host, "CartPole-v0")
 	must(err)
+	defer client.Close()
 
-	// Create environment instance.
-	id, err := client.Create("CartPole-v0")
-	must(err)
-	defer client.Close(id)
-
-	// Start monitoring to "./gym-monitor".
-	workingDir, err := os.Getwd()
-	must(err)
-	monitorFile := filepath.Join(workingDir, "gym-monitor")
-	must(client.StartMonitor(id, monitorFile, false, false, false))
-	defer client.CloseMonitor(id)
+	// Start monitoring.
+	monitorFile := "gym-monitor"
+	must(client.Monitor(monitorFile, true, false, CaptureVideo))
 
 	// Create a neural network policy.
 	creator := anyvec32.CurrentCreator()
@@ -50,7 +48,7 @@ func main() {
 	actionSampler := anyrl.Softmax{}
 
 	// Create an anyrl.Env from our gym environment.
-	env, err := anyrl.GymEnv(creator, client, id, RenderEnv)
+	env, err := anyrl.GymEnv(creator, client, RenderEnv)
 	must(err)
 
 	// Setup Trust Region Policy Optimization for training.
@@ -82,12 +80,11 @@ func main() {
 		grad.AddToVars()
 	}
 
-	// Uncomment the code below to upload to the Gym website.
-	// Note: you must set the OPENAI_GYM_API_KEY environment
-	// variable or set the second argument of Upload() to a
-	// non-empty string.
+	// Uncomment to upload to OpenAI Gym.
+	// You will have to set OPENAI_GYM_API_KEY.
 	//
-	//     must(client.Upload(monitorFile, "", ""))
+	//     client.Close()
+	//     must(gym.Upload(Host, monitorFile, "", ""))
 	//
 }
 
