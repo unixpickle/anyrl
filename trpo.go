@@ -1,8 +1,6 @@
 package anyrl
 
 import (
-	"fmt"
-
 	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anyvec"
@@ -130,20 +128,11 @@ func (t *TRPO) acceptable(r *RolloutSet, grad anydiff.Grad, outs lazyseq.Tape) b
 	improvement := anyvec.Sum(outStats.Slice(0, 1))
 	kl := anyvec.Sum(outStats.Slice(1, 2))
 
-	switch val := improvement.(type) {
-	case float32:
-		if val < 0 || float64(kl.(float32)) > t.targetKL() {
-			return false
-		}
-	case float64:
-		if val < 0 || kl.(float64) > t.targetKL() {
-			return false
-		}
-	default:
-		panic(fmt.Sprintf("unsupported numeric: %T", val))
-	}
-
-	return true
+	targetImprovement := c.MakeNumeric(0)
+	targetKL := c.MakeNumeric(t.targetKL())
+	ops := c.NumOps()
+	return ops.Greater(improvement, targetImprovement) &&
+		ops.Less(kl, targetKL)
 }
 
 // storePolicyOutputs evaluates the policy on the inputs
