@@ -136,7 +136,7 @@ func rollout(creator anyvec.Creator, agent anyrnn.Block, envs []anyrl.Env) *anyr
 	// Compress the input frames as we store them.
 	// If we used a ReferenceTape for the input, the
 	// program would use way too much memory.
-	inputs, inputCh := lazyseq.CompressedTape(flate.DefaultCompression)
+	inputs, inputCh := lazyseq.CompressedUint8Tape(flate.DefaultCompression)
 
 	rewards, rewardsCh := lazyseq.ReferenceTape()
 	sampled, sampledCh := lazyseq.ReferenceTape()
