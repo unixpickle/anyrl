@@ -3,7 +3,6 @@ package anyrl
 import (
 	"testing"
 
-	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyvec/anyvec64"
@@ -32,10 +31,14 @@ func TestTRPO(t *testing.T) {
 	}
 	grad := trpo.Run(r)
 
-	policyGrad := anydiff.NewGrad(block.Parameters()...)
-	PolicyGradient(trpo.ActionSpace, r, grad, func(in lazyseq.Rereader) lazyseq.Rereader {
-		return lazyseq.Lazify(anyrnn.Map(lazyseq.Unlazify(in), block))
-	})
+	pg := &PG{
+		Policy: func(in lazyseq.Rereader) lazyseq.Rereader {
+			return lazyseq.Lazify(anyrnn.Map(lazyseq.Unlazify(in), block))
+		},
+		Params:    anynet.AllParameters(block),
+		LogProber: trpo.ActionSpace,
+	}
+	policyGrad := pg.Run(r)
 
 	if dotGrad(grad, policyGrad).(float64) < 0 {
 		t.Errorf("TRPO gave a direction of decrease")

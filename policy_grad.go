@@ -73,22 +73,6 @@ func (p *PG) actionJudger() ActionJudger {
 	}
 }
 
-// PolicyGradient approximates the gradient of a policy
-// using rollouts sampled from that policy.
-//
-// The policy function should take a sequence of policy
-// inputs and produce input parameters for the action
-// space.
-//
-// The computed gradient is added to the grad argument.
-func PolicyGradient(a ActionSpace, r *RolloutSet, grad anydiff.Grad,
-	policy func(in lazyseq.Rereader) lazyseq.Rereader) {
-	if len(grad) == 0 {
-		return
-	}
-
-}
-
 // QJudger is an ActionJudger which judges the goodness of
 // an action by that action's sampled Q-value.
 type QJudger struct{}

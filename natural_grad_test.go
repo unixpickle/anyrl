@@ -118,11 +118,14 @@ func TestConjugateGradients(t *testing.T) {
 
 	// We have to use the actual gradient to avoid the
 	// nullspace of the Fisher matrix.
-	inGrad := anydiff.NewGrad(block.Parameters()...)
-	PolicyGradient(npg.ActionSpace, r, inGrad,
-		func(in lazyseq.Rereader) lazyseq.Rereader {
+	pg := &PG{
+		Policy: func(in lazyseq.Rereader) lazyseq.Rereader {
 			return lazyseq.Lazify(anyrnn.Map(lazyseq.Unlazify(in), block))
-		})
+		},
+		Params:    anynet.AllParameters(block),
+		LogProber: npg.ActionSpace,
+	}
+	inGrad := pg.Run(r)
 	solvedGrad := copyGrad(inGrad)
 
 	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(c, r.Inputs),
