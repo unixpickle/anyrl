@@ -48,6 +48,14 @@ type NaturalPG struct {
 	//
 	// If nil, TotalJudger is used.
 	ActionJudger ActionJudger
+
+	// Reduce is used to decide which rollouts to use when
+	// solving for the natural gradient.
+	//
+	// For an example of something to use, see FracReducer.
+	//
+	// If nil, all rollouts are used.
+	Reduce func(in *RolloutSet) *RolloutSet
 }
 
 // Run computes the natural gradient for the rollouts.
@@ -71,8 +79,12 @@ func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
 		return grad
 	}
 
-	// TODO: add option for running CG on a subset of the
-	// total experience.
+	if n.Reduce != nil {
+		c := creatorFromGrad(grad)
+		r = n.Reduce(r)
+		in := lazyseq.TapeRereader(c, r.Inputs)
+		seq = lazyseq.MakeReuser(n.apply(in, n.Policy))
+	}
 
 	n.conjugateGradients(r, seq, grad)
 
