@@ -134,17 +134,19 @@ func RolloutRNNChans(c anyvec.Creator, agent anyrnn.Block, actionSampler Sampler
 func rolloutReset(c anyvec.Creator, envs []Env) (*anyseq.Batch, error) {
 	initBatch := &anyseq.Batch{
 		Present: make([]bool, len(envs)),
-		Packed:  c.MakeVector(0),
 	}
 
+	var allObs []anyvec.Vector
 	for i, e := range envs {
 		obs, err := e.Reset()
 		if err != nil {
 			return nil, err
 		}
 		initBatch.Present[i] = true
-		initBatch.Packed = c.Concat(initBatch.Packed, obs)
+		allObs = append(allObs, obs)
 	}
+
+	initBatch.Packed = c.Concat(allObs...)
 
 	return initBatch, nil
 }
@@ -154,11 +156,9 @@ func rolloutStep(actions *anyseq.Batch, envs []Env) (obs, rewards *anyseq.Batch,
 	c := actions.Packed.Creator()
 	obs = &anyseq.Batch{
 		Present: make([]bool, len(actions.Present)),
-		Packed:  c.MakeVector(0),
 	}
 	rewards = &anyseq.Batch{
 		Present: actions.Present,
-		Packed:  c.MakeVector(0),
 	}
 	actionChunkSize := actions.Packed.Len() / actions.NumPresent()
 	var actionOffset int
@@ -176,6 +176,8 @@ func rolloutStep(actions *anyseq.Batch, envs []Env) (obs, rewards *anyseq.Batch,
 	obsVecs, rews, dones, errs := batchStep(presentEnvs, splitActions)
 
 	var presentIdx int
+	var joinObs []anyvec.Vector
+	var rewData []float64
 	for i, pres := range actions.Present {
 		if !pres {
 			continue
@@ -188,12 +190,13 @@ func rolloutStep(actions *anyseq.Batch, envs []Env) (obs, rewards *anyseq.Batch,
 		}
 		if !done {
 			obs.Present[i] = true
-			obs.Packed = c.Concat(obs.Packed, obsVec)
+			joinObs = append(joinObs, obsVec)
 		}
-		rewVec := c.MakeVector(1)
-		rewVec.AddScalar(c.MakeNumeric(rew))
-		rewards.Packed = c.Concat(rewards.Packed, rewVec)
+		rewData = append(rewData, rew)
 	}
+
+	obs.Packed = c.Concat(joinObs...)
+	rewards.Packed = c.MakeVectorData(c.MakeNumericList(rewData))
 
 	return
 }
