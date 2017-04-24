@@ -28,18 +28,6 @@ type NaturalPG struct {
 	// If 0, DefaultConjGradIters is used.
 	Iters int
 
-	// FwdDiff copies the Policy and changes it to use an
-	// anyfwd.Creator with the derivatives given in g.
-	// Any gradients missing from g should be set to 0.
-	//
-	// Since the resulting block will have a different set
-	// of parameter pointers, this returns a mapping from
-	// the new parameters to old parameters.
-	//
-	// If nil, the package-level MakeFwdDiff is used.
-	FwdDiff func(c *anyfwd.Creator, p anyrnn.Block, g anydiff.Grad) (anyrnn.Block,
-		map[*anydiff.Var]*anydiff.Var)
-
 	// ApplyPolicy applies a policy to an input sequence.
 	// If nil, back-propagation through time is used.
 	ApplyPolicy func(s lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader
@@ -194,13 +182,25 @@ func (n *NaturalPG) apply(in lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader 
 	}
 }
 
-func (n *NaturalPG) makeFwd(c *anyfwd.Creator, g anydiff.Grad) (anyrnn.Block,
+func (n *NaturalPG) makeFwd(c *anyfwd.Creator, derivs anydiff.Grad) (anyrnn.Block,
 	map[*anydiff.Var]*anydiff.Var) {
-	if n.FwdDiff == nil {
-		return MakeFwdDiff(c, n.Policy, g)
-	} else {
-		return n.FwdDiff(c, n.Policy, g)
+	fwdBlock, err := serializer.Copy(n.Policy)
+	if err != nil {
+		panic(err)
 	}
+	anyfwd.MakeFwd(c, fwdBlock)
+
+	newToOld := map[*anydiff.Var]*anydiff.Var{}
+	oldParams := anynet.AllParameters(n.Policy)
+	for i, newParam := range anynet.AllParameters(fwdBlock) {
+		oldParam := oldParams[i]
+		newToOld[newParam] = oldParam
+		if deriv, ok := derivs[oldParam]; ok {
+			newParam.Vector.(*anyfwd.Vector).Jacobian[0].Set(deriv)
+		}
+	}
+
+	return fwdBlock.(anyrnn.Block), newToOld
 }
 
 func (n *NaturalPG) iters() int {
@@ -209,47 +209,6 @@ func (n *NaturalPG) iters() int {
 	} else {
 		return DefaultConjGradIters
 	}
-}
-
-// MakeFwdDiff copies the RNN policy, updates it to use
-// forward automatic differentiation, and sets the forward
-// derivatives to the vectors in g.
-// It returns the new block and a mapping from the new
-// parameters to the old ones.
-//
-// Copying is done by serializing the policy and then
-// deserializing it once more.
-// If the policy does not implement serializer.Serializer,
-// this will fail.
-//
-// Setting the creator is done by looping through the
-// policy parameters and updating all of their vectors.
-// If there are hidden parameter vectors, this will fail.
-func MakeFwdDiff(c *anyfwd.Creator, p anyrnn.Block, g anydiff.Grad) (anyrnn.Block,
-	map[*anydiff.Var]*anydiff.Var) {
-	data, err := serializer.SerializeAny(p)
-	if err != nil {
-		panic(err)
-	}
-	var newPolicy anyrnn.Block
-	if err := serializer.DeserializeAny(data, &newPolicy); err != nil {
-		panic(err)
-	}
-
-	oldParams := anynet.AllParameters(p)
-	newToOld := map[*anydiff.Var]*anydiff.Var{}
-	for i, param := range anynet.AllParameters(newPolicy) {
-		oldParam := oldParams[i]
-		newToOld[param] = oldParam
-		newVec := c.MakeVector(param.Vector.Len()).(*anyfwd.Vector)
-		newVec.Values.Set(param.Vector)
-		if gradVec, ok := g[oldParam]; ok {
-			newVec.Jacobian[0].Set(gradVec)
-		}
-		param.Vector = newVec
-	}
-
-	return newPolicy, newToOld
 }
 
 // makeFwdTape wraps a Tape to translate it to a forward
