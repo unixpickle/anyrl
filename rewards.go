@@ -1,6 +1,8 @@
 package anyrl
 
 import (
+	"math"
+
 	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyseq"
@@ -22,6 +24,23 @@ func MeanReward(c anyvec.Creator, rewards lazyseq.Tape) anyvec.Numeric {
 	total := TotalRewards(c, rewards)
 	total.Scale(total.Creator().MakeNumeric(1 / float64(total.Len())))
 	return anyvec.Sum(total)
+}
+
+// DiscountedRewards computes discounted rewards.
+func DiscountedRewards(rewards lazyseq.Tape, factor float64) lazyseq.Tape {
+	res, writer := lazyseq.ReferenceTape()
+
+	var i float64
+	for in := range rewards.ReadTape(0, -1) {
+		discount := math.Pow(factor, i)
+		scaled := in.Reduce(in.Present)
+		scaled.Packed.Scale(scaled.Packed.Creator().MakeNumeric(discount))
+		writer <- scaled
+		i++
+	}
+
+	close(writer)
+	return res
 }
 
 func rewardSum(rewards lazyseq.Tape) *anyseq.Batch {
