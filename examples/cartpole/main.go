@@ -57,6 +57,7 @@ func main() {
 			Policy:      policy,
 			Params:      policy.Parameters(),
 			ActionSpace: actionSampler,
+			Damping:     0.1,
 		},
 	}
 

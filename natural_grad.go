@@ -28,6 +28,12 @@ type NaturalPG struct {
 	// If 0, DefaultConjGradIters is used.
 	Iters int
 
+	// Damping specifies the damping coefficient for the
+	// Conjugate Gradients algorithm.
+	// It is the multiple of the identity matrix to add
+	// to the Fisher information matrix.
+	Damping float64
+
 	// ApplyPolicy applies a policy to an input sequence.
 	// If nil, back-propagation through time is used.
 	ApplyPolicy func(s lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader
@@ -167,7 +173,13 @@ func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
 
 	out := anydiff.Grad{}
 	for newParam, paramGrad := range newGrad {
-		out[paramMap[newParam]] = paramGrad.(*anyfwd.Vector).Jacobian[0]
+		oldParam := paramMap[newParam]
+		out[oldParam] = paramGrad.(*anyfwd.Vector).Jacobian[0]
+		if n.Damping > 0 {
+			scaledOld := grad[oldParam].Copy()
+			scaledOld.Scale(c.ValueCreator.MakeNumeric(n.Damping))
+			out[oldParam].Add(scaledOld)
+		}
 	}
 
 	return out
