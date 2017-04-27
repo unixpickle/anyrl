@@ -42,10 +42,12 @@ func main() {
 			anynet.Tanh,
 			anynet.NewFC(creator, 32, 16),
 			anynet.Tanh,
-			anynet.NewFC(creator, 16, 2),
+
+			// Encourage exploration with a zero last layer.
+			anynet.NewFCZero(creator, 16, 1),
 		},
 	}
-	actionSampler := anyrl.Softmax{}
+	actionSampler := &anyrl.Bernoulli{OneHot: true}
 
 	// Create an anyrl.Env from our gym environment.
 	env, err := anyrl.GymEnv(creator, client, RenderEnv)
