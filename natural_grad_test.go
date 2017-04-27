@@ -146,7 +146,7 @@ func TestConjugateGradients(t *testing.T) {
 		expected := expectedProduct[variable]
 		diff := actual.Copy()
 		diff.Sub(expected)
-		if anyvec.AbsMax(diff).(float64) > 1e-3 {
+		if anyvec.AbsMax(diff).(float64) > 2e-3 {
 			t.Errorf("variable grad should be %v but it's %v", expected.Data(),
 				actual.Data())
 		}

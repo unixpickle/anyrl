@@ -107,6 +107,72 @@ func (s Softmax) KL(params1, params2 anydiff.Res, batchSize int) anydiff.Res {
 	})
 }
 
+// Bernoulli is an ActionSpace for binary actions or lists
+// of binary actions.
+// It can be used with one-hot action spaces (simulating a
+// softmax with two outputs) or with binary action spaces
+// where each binary value is a single number.
+//
+// The Bernoulli distribution is implemented via the
+// logistic sigmoid, 1/(1+exp(-x)).
+// When an input x is fed in, the logistic sigmoid is used
+// to compute the probability of a 1.
+type Bernoulli struct {
+	// OneHot, if true, indicates that samples should be
+	// one-hot vectors with two components.
+	// If false, samples are binary values (0 or 1).
+	OneHot bool
+}
+
+// Sample samples Bernoulli random variables.
+func (b *Bernoulli) Sample(params anyvec.Vector, batch int) anyvec.Vector {
+	probs := params.Copy()
+	anyvec.Sigmoid(probs)
+
+	cutoffs := params.Creator().MakeVector(params.Len())
+	anyvec.Rand(cutoffs, anyvec.Uniform, nil)
+
+	// Turn probs into a sampled binary vector.
+	probs.Sub(cutoffs)
+	anyvec.GreaterThan(probs, params.Creator().MakeNumeric(0))
+
+	if b.OneHot {
+		return pairWithComplement(anydiff.NewConst(probs)).Output()
+	} else {
+		return probs
+	}
+}
+
+// LogProb computes the output log probabilities.
+func (b *Bernoulli) LogProb(params anydiff.Res, output anyvec.Vector,
+	batch int) anydiff.Res {
+	offOn := b.offOnProbs(params)
+	var outputMask anydiff.Res = anydiff.NewConst(output)
+	if !b.OneHot {
+		outputMask = pairWithComplement(outputMask)
+	}
+	return batchedDot(offOn, outputMask, batch)
+}
+
+// KL computes the KL divergences between two batches of
+// Bernoulli distributions.
+func (b *Bernoulli) KL(params1, params2 anydiff.Res, batchSize int) anydiff.Res {
+	offOn1 := b.offOnProbs(params1)
+	offOn2 := b.offOnProbs(params2)
+	diff := anydiff.Sub(offOn1, offOn2)
+	probs1 := anydiff.Exp(offOn1)
+	return batchedDot(probs1, diff, batchSize)
+}
+
+func (b *Bernoulli) offOnProbs(params anydiff.Res) anydiff.Res {
+	return anydiff.Pool(params, func(params anydiff.Res) anydiff.Res {
+		c := params.Output().Creator()
+		onProbs := anydiff.LogSigmoid(params)
+		offProbs := anydiff.LogSigmoid(anydiff.Scale(params, c.MakeNumeric(-1)))
+		return sideBySide(offProbs, onProbs)
+	})
+}
+
 func batchedDot(vecs1, vecs2 anydiff.Res, batchSize int) anydiff.Res {
 	products := anydiff.Mul(vecs1, vecs2)
 	return anydiff.SumCols(&anydiff.Matrix{
@@ -143,4 +209,33 @@ func sampleProbabilities(p anyvec.Vector) anyvec.Vector {
 	oneHot := make([]float64, p.Len())
 	oneHot[idx] = 1
 	return p.Creator().MakeVectorData(p.Creator().MakeNumericList(oneHot))
+}
+
+// pairWithComplement turns a vector of the form
+//
+//     <a, b, c, ...>
+//
+// into a vector of the form
+//
+//     <1-a, a, 1-b, b, 1-c, c, ...>
+func pairWithComplement(in anydiff.Res) anydiff.Res {
+	return anydiff.Pool(in, func(in anydiff.Res) anydiff.Res {
+		return sideBySide(anydiff.Complement(in), in)
+	})
+}
+
+// sideBySide turns two vectors
+//
+//     <a1, b1, c1, ...>
+//     <a2, b2, c2, ...>
+//
+// into a vector of the form
+//
+//     <a1, a2, b1, b2, c1, c2, ...>
+func sideBySide(v1, v2 anydiff.Res) anydiff.Res {
+	return anydiff.Transpose(&anydiff.Matrix{
+		Data: anydiff.Concat(v1, v2),
+		Rows: 2,
+		Cols: v1.Output().Len(),
+	}).Data
 }
