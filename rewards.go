@@ -22,8 +22,18 @@ func TotalRewards(c anyvec.Creator, rewards lazyseq.Tape) anyvec.Vector {
 // computes the mean of the sums.
 func MeanReward(c anyvec.Creator, rewards lazyseq.Tape) anyvec.Numeric {
 	total := TotalRewards(c, rewards)
-	total.Scale(total.Creator().MakeNumeric(1 / float64(total.Len())))
-	return anyvec.Sum(total)
+	return sampleMean(total)
+}
+
+// RewardVariance computes the variance of total rewards.
+func RewardVariance(c anyvec.Creator, rewards lazyseq.Tape) anyvec.Numeric {
+	total := TotalRewards(c, rewards)
+	negMean := c.NumOps().Mul(sampleMean(total), c.MakeNumeric(-1))
+	total.AddScalar(negMean)
+
+	// Second moment of centered samples is the variance.
+	anyvec.Pow(total, c.MakeNumeric(2))
+	return sampleMean(total)
 }
 
 // DiscountedRewards computes discounted rewards.
@@ -56,4 +66,9 @@ func rewardSum(rewards lazyseq.Tape) *anyseq.Batch {
 		}
 	}
 	return sum
+}
+
+func sampleMean(vec anyvec.Vector) anyvec.Numeric {
+	c := vec.Creator()
+	return c.NumOps().Div(anyvec.Sum(vec), c.MakeNumeric(float64(vec.Len())))
 }
