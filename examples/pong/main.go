@@ -89,8 +89,11 @@ func main() {
 			// Join the rollouts into one set.
 			r := anyrl.PackRolloutSets(rollouts)
 
-			// Print the rewards.
-			log.Printf("batch %d: mean_reward=%v", batchIdx, r.MeanReward(creator))
+			// Print the stats for the batch.
+			ops := creator.NumOps()
+			log.Printf("batch %d: mean_reward=%v stddev=%v", batchIdx,
+				r.MeanReward(creator),
+				ops.Pow(r.RewardVariance(creator), creator.MakeNumeric(0.5)))
 
 			// Train on the rollouts.
 			log.Println("Training on batch...")
