@@ -64,6 +64,11 @@ func (r *RolloutSet) MeanReward(c anyvec.Creator) anyvec.Numeric {
 	return MeanReward(c, r.Rewards)
 }
 
+// RewardVariance computes the variance of total rewards.
+func (r *RolloutSet) RewardVariance(c anyvec.Creator) anyvec.Numeric {
+	return RewardVariance(c, r.Rewards)
+}
+
 // RolloutRNN performs rollouts using an RNN.
 //
 // One rollout is performed per environment.
