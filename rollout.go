@@ -69,6 +69,16 @@ func (r *RolloutSet) RewardVariance(c anyvec.Creator) anyvec.Numeric {
 	return RewardVariance(c, r.Rewards)
 }
 
+// NumSteps counts the total number of timesteps across
+// every episode.
+func (r *RolloutSet) NumSteps() int {
+	var count int
+	for entry := range r.Rewards.ReadTape(0, -1) {
+		count += entry.NumPresent()
+	}
+	return count
+}
+
 // RolloutRNN performs rollouts using an RNN.
 //
 // One rollout is performed per environment.
