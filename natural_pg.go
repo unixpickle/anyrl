@@ -58,6 +58,13 @@ type NaturalPG struct {
 	//
 	// If nil, all rollouts are used.
 	Reduce func(in *RolloutSet) *RolloutSet
+
+	// Set these to enable entropy regularization.
+	//
+	// A term is added to every timestep of the form
+	// EntropyReg*H(policy(state)).
+	Entropyer  Entropyer
+	EntropyReg float64
 }
 
 // Run computes the natural gradient for the rollouts.
@@ -71,6 +78,8 @@ func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
 		Params:       n.Params,
 		ActionSpace:  n.ActionSpace,
 		ActionJudger: n.ActionJudger,
+		Entropyer:    n.Entropyer,
+		EntropyReg:   n.EntropyReg,
 	}
 	grad := pg.Run(r)
 
