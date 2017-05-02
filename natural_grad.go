@@ -8,6 +8,7 @@ import (
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyseq"
+	"github.com/unixpickle/lazyseq/lazyrnn"
 	"github.com/unixpickle/serializer"
 )
 
@@ -187,8 +188,8 @@ func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
 
 func (n *NaturalPG) apply(in lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader {
 	if n.ApplyPolicy == nil {
-		cachedIn := lazyseq.Unlazify(in)
-		return lazyseq.Lazify(anyrnn.Map(cachedIn, b))
+		tape, writer := lazyseq.ReferenceTape()
+		return lazyseq.SeqRereader(lazyrnn.BPTT(in, b), tape, writer)
 	} else {
 		return n.ApplyPolicy(in, b)
 	}
