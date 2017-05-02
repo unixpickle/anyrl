@@ -26,6 +26,8 @@ type LogProber interface {
 	// in the batch, a log-probability of the parameters
 	// producing that output.
 	//
+	// The natural logarithm should be used.
+	//
 	// For continuous distributions, this is the log of
 	// the density rather than of the probability.
 	LogProb(params anydiff.Res, output anyvec.Vector,
@@ -44,6 +46,16 @@ type KLer interface {
 	// This is batched, just like LogProber.LogProb.
 	// It produces one value per entry in the batch.
 	KL(params1, params2 anydiff.Res, batchSize int) anydiff.Res
+}
+
+// An Entropyer can compute the entropy of a parametric
+// probability distribution.
+type Entropyer interface {
+	// Entropy computes the entropy for each parameter
+	// vector in a batch.
+	//
+	// Entropy should be measured in nats.
+	Entropy(params anydiff.Res, batchSize int) anydiff.Res
 }
 
 // Softmax is an action space which applies the softmax
@@ -105,6 +117,16 @@ func (s Softmax) KL(params1, params2 anydiff.Res, batchSize int) anydiff.Res {
 	})
 }
 
+// Entropy computes the entropy of the distributions.
+func (s Softmax) Entropy(params anydiff.Res, batchSize int) anydiff.Res {
+	chunkSize := params.Output().Len() / batchSize
+	return anydiff.Pool(params, func(params anydiff.Res) anydiff.Res {
+		logProbs := anydiff.LogSoftmax(params, chunkSize)
+		probs := anydiff.Exp(logProbs)
+		return batchedDot(probs, logProbs, batchSize)
+	})
+}
+
 // Bernoulli is an action space for binary actions or
 // lists of binary actions.
 // It can be used with a one-hot representation (similar
@@ -160,6 +182,16 @@ func (b *Bernoulli) KL(params1, params2 anydiff.Res, batchSize int) anydiff.Res 
 	diff := anydiff.Sub(offOn1, offOn2)
 	probs1 := anydiff.Exp(offOn1)
 	return batchedDot(probs1, diff, batchSize)
+}
+
+// Entropy computes the information entropy of Bernoulli
+// distributions.
+func (b *Bernoulli) Entropy(params anydiff.Res, batchSize int) anydiff.Res {
+	return anydiff.Pool(params, func(params anydiff.Res) anydiff.Res {
+		logs := b.offOnProbs(params)
+		probs := anydiff.Exp(logs)
+		return batchedDot(probs, logs, batchSize)
+	})
 }
 
 func (b *Bernoulli) offOnProbs(params anydiff.Res) anydiff.Res {

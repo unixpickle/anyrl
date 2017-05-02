@@ -63,6 +63,19 @@ func TestSoftmaxKL(t *testing.T) {
 	assertSimilar(t, actual, expected)
 }
 
+func TestSoftmaxEntropy(t *testing.T) {
+	c := anyvec64.DefaultCreator{}
+	in := c.MakeVectorData([]float64{
+		0.0902265411093121, -1.1492330740032015, -0.7417678904738725,
+		0.1571149104608501, -1.3123382994428667, 1.2192607242291933,
+	})
+
+	actual := Softmax{}.Entropy(anydiff.NewConst(in), 2).Output()
+	expected := c.MakeVectorData([]float64{-0.963070145433149, -0.753250756925369})
+
+	assertSimilar(t, actual, expected)
+}
+
 func TestBernoulliSample(t *testing.T) {
 	c := anyvec64.DefaultCreator{}
 	in := c.MakeVectorData([]float64{
@@ -160,6 +173,28 @@ func TestBernoulliKL(t *testing.T) {
 		anydiff.NewConst(in2), 2).Output()
 	expected := anyvec.SumCols(
 		Softmax{}.KL(softmaxIns[0], softmaxIns[1], 6).Output(),
+		2,
+	)
+
+	assertSimilar(t, actual, expected)
+}
+
+func TestBernoulliEntropy(t *testing.T) {
+	c := anyvec64.DefaultCreator{}
+	in := c.MakeVectorData([]float64{
+		0.0902265411093121, -1.1492330740032015, -0.7417678904738725,
+		0.1571149104608501, -1.3123382994428667, 1.2192607242291933,
+	})
+
+	si := make([]float64, in.Len()*2)
+	for j, x := range in.Data().([]float64) {
+		si[2*j] = -x
+	}
+	softmaxIns := anydiff.NewConst(c.MakeVectorData(si))
+
+	actual := (&Bernoulli{}).Entropy(anydiff.NewConst(in), 2).Output()
+	expected := anyvec.SumCols(
+		Softmax{}.Entropy(softmaxIns, 6).Output(),
 		2,
 	)
 
