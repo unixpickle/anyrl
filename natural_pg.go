@@ -15,6 +15,13 @@ import (
 // Default number of iterations for Conjugate Gradients.
 const DefaultConjGradIters = 10
 
+// NaturalActionSpace implements the action space methods
+// necessary to run natural policy gradients.
+type NaturalActionSpace interface {
+	LogProber
+	KLer
+}
+
 // NaturalPG implements natural policy gradients.
 // Due to requirements involivng second derivatives,
 // NaturalPG requires more detailed access to the policy
@@ -22,7 +29,7 @@ const DefaultConjGradIters = 10
 type NaturalPG struct {
 	Policy      anyrnn.Block
 	Params      []*anydiff.Var
-	ActionSpace ActionSpace
+	ActionSpace NaturalActionSpace
 
 	// Iters specifies the number of iterations of the
 	// Conjugate Gradients algorithm.
@@ -62,7 +69,7 @@ func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
 			return seq
 		},
 		Params:       n.Params,
-		LogProber:    n.ActionSpace,
+		ActionSpace:  n.ActionSpace,
 		ActionJudger: n.ActionJudger,
 	}
 	grad := pg.Run(r)

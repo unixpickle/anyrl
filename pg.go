@@ -27,8 +27,8 @@ type PG struct {
 	// the gradients.
 	Params []*anydiff.Var
 
-	// LogProber determines log-likelihoods of actions.
-	LogProber LogProber
+	// ActionSpace determines log-likelihoods of actions.
+	ActionSpace LogProber
 
 	// ActionJudger is used to judge actions.
 	//
@@ -53,7 +53,7 @@ func (p *PG) Run(r *RolloutSet) anydiff.Grad {
 		actionParams := v[0]
 		selected := v[1]
 		rewards := v[2]
-		logProb := p.LogProber.LogProb(actionParams, selected.Output(), n)
+		logProb := p.ActionSpace.LogProb(actionParams, selected.Output(), n)
 		return anydiff.Mul(logProb, rewards)
 	}, policyOut, selectedOuts, rewards)
 

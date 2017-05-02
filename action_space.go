@@ -32,24 +32,22 @@ type LogProber interface {
 		batchSize int) anydiff.Res
 }
 
-// ActionSpace is a parameterized action space probability
-// distribution.
+// A KLer can compute the KL divergence between
+// parameteric probability distributions given the
+// parameters of both distributions.
 //
 // For an example, see Softmax.
-type ActionSpace interface {
-	Sampler
-	LogProber
-
+type KLer interface {
 	// KL computes the KL divergence between action space
 	// distributions, given the parameters for each.
 	//
-	// This is batched, just like LogProb.
+	// This is batched, just like LogProber.LogProb.
 	// It produces one value per entry in the batch.
 	KL(params1, params2 anydiff.Res, batchSize int) anydiff.Res
 }
 
-// Softmax is an ActionSpace which applies the softmax
-// function to obtain a discrete probability distribution.
+// Softmax is an action space which applies the softmax
+// function to obtain a categorical distribution.
 // It produces one-hot vector samples.
 type Softmax struct{}
 
@@ -107,11 +105,11 @@ func (s Softmax) KL(params1, params2 anydiff.Res, batchSize int) anydiff.Res {
 	})
 }
 
-// Bernoulli is an ActionSpace for binary actions or lists
-// of binary actions.
-// It can be used with one-hot action spaces (simulating a
-// softmax with two outputs) or with binary action spaces
-// where each binary value is a single number.
+// Bernoulli is an action space for binary actions or
+// lists of binary actions.
+// It can be used with a one-hot representation (similar
+// to softmax) or with binary action spaces where each
+// binary value is a single number.
 //
 // The Bernoulli distribution is implemented via the
 // logistic sigmoid, 1/(1+exp(-x)).

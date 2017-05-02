@@ -122,8 +122,8 @@ func TestConjugateGradients(t *testing.T) {
 		Policy: func(in lazyseq.Rereader) lazyseq.Rereader {
 			return lazyseq.Lazify(anyrnn.Map(lazyseq.Unlazify(in), block))
 		},
-		Params:    anynet.AllParameters(block),
-		LogProber: npg.ActionSpace,
+		Params:      anynet.AllParameters(block),
+		ActionSpace: npg.ActionSpace,
 	}
 	inGrad := pg.Run(r)
 	solvedGrad := copyGrad(inGrad)

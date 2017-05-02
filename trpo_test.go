@@ -35,8 +35,8 @@ func TestTRPO(t *testing.T) {
 		Policy: func(in lazyseq.Rereader) lazyseq.Rereader {
 			return lazyseq.Lazify(anyrnn.Map(lazyseq.Unlazify(in), block))
 		},
-		Params:    anynet.AllParameters(block),
-		LogProber: trpo.ActionSpace,
+		Params:      anynet.AllParameters(block),
+		ActionSpace: trpo.ActionSpace,
 	}
 	policyGrad := pg.Run(r)
 
