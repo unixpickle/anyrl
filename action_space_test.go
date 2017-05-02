@@ -71,7 +71,7 @@ func TestSoftmaxEntropy(t *testing.T) {
 	})
 
 	actual := Softmax{}.Entropy(anydiff.NewConst(in), 2).Output()
-	expected := c.MakeVectorData([]float64{-0.963070145433149, -0.753250756925369})
+	expected := c.MakeVectorData([]float64{0.963070145433149, 0.753250756925369})
 
 	assertSimilar(t, actual, expected)
 }

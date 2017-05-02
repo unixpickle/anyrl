@@ -123,7 +123,8 @@ func (s Softmax) Entropy(params anydiff.Res, batchSize int) anydiff.Res {
 	return anydiff.Pool(params, func(params anydiff.Res) anydiff.Res {
 		logProbs := anydiff.LogSoftmax(params, chunkSize)
 		probs := anydiff.Exp(logProbs)
-		return batchedDot(probs, logProbs, batchSize)
+		return anydiff.Scale(batchedDot(probs, logProbs, batchSize),
+			params.Output().Creator().MakeNumeric(-1))
 	})
 }
 
@@ -190,7 +191,8 @@ func (b *Bernoulli) Entropy(params anydiff.Res, batchSize int) anydiff.Res {
 	return anydiff.Pool(params, func(params anydiff.Res) anydiff.Res {
 		logs := b.offOnProbs(params)
 		probs := anydiff.Exp(logs)
-		return batchedDot(probs, logs, batchSize)
+		return anydiff.Scale(batchedDot(probs, logs, batchSize),
+			params.Output().Creator().MakeNumeric(-1))
 	})
 }
 
