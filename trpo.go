@@ -7,15 +7,12 @@ import (
 	"github.com/unixpickle/lazyseq"
 )
 
-// Default target KL divergence for TRPO.
-const DefaultTargetKL = 0.01
-
-// Default line-search decay factor for TRPO.
-const DefaultLineSearchDecay = 0.5
-
-// Default maximum number of line-search iterations for
-// TRPO.
-const DefaultMaxLineSearch = 20
+// Default settings for TRPO.
+const (
+	DefaultTargetKL        = 0.01
+	DefaultLineSearchDecay = 0.5
+	DefaultMaxLineSearch   = 20
+)
 
 // TRPO uses the Trust Region Policy Optimization
 // algorithm to train agents.
