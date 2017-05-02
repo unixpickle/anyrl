@@ -138,18 +138,27 @@ func (t *TotalJudger) JudgeActions(r *RolloutSet) lazyseq.Tape {
 func (t *TotalJudger) normalize(vec anyvec.Vector) {
 	c := vec.Creator()
 
+	// Due to rounding errors, homogeneous rewards (i.e.
+	// all the same reward) sometimes yield vectors of
+	// the form <-1, -1, -1, ...>.
+	// By subtracting the maximum value, we can ensure
+	// zeroes for homogeneous vectors.
+	max := anyvec.Max(vec)
+	vec.AddScalar(c.NumOps().Mul(max, c.MakeNumeric(-1)))
+
 	// Set mean=0 so we can use second moment as variance.
 	meanVals := vec.Copy()
 	meanVals.Scale(c.MakeNumeric(-1 / float64(vec.Len())))
 	vec.AddScalar(anyvec.Sum(meanVals))
 
+	stdVals := vec.Copy()
+
 	epsilon := t.Epsilon
 	if epsilon == 0 {
 		epsilon = 1e-8
 	}
-	vec.AddScalar(c.MakeNumeric(epsilon))
+	stdVals.AddScalar(c.MakeNumeric(epsilon))
 
-	stdVals := vec.Copy()
 	anyvec.Pow(stdVals, c.MakeNumeric(2))
 	stdVals.Scale(c.MakeNumeric(1 / float64(vec.Len())))
 	secondMoment := anyvec.Sum(stdVals)

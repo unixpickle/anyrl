@@ -56,7 +56,7 @@ type TRPO struct {
 // policy on a different Goroutine.
 func (t *TRPO) Run(r *RolloutSet) anydiff.Grad {
 	grad := t.NaturalPG.Run(r)
-	if len(grad) == 0 {
+	if len(grad) == 0 || allZeros(grad) {
 		return grad
 	}
 	c := creatorFromGrad(grad)
