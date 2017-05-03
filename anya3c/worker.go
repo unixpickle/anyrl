@@ -8,6 +8,8 @@ import (
 
 // A worker manages the current state of a worker.
 type worker struct {
+	ID int
+
 	Agent *LocalAgent
 	Env   anyrl.Env
 
@@ -32,6 +34,23 @@ type worker struct {
 	// Tracks the total undiscounted reward for the
 	// current episode.
 	RewardSum float64
+}
+
+// newWorker creates a worker with its own local agent.
+//
+// The worker should be reset before it is used.
+func newWorker(id int, env anyrl.Env, p ParamServer) (*worker, error) {
+	agent, err := p.LocalCopy()
+	if err != nil {
+		return nil, err
+	}
+	res := &worker{
+		ID:         id,
+		Agent:      agent,
+		Env:        env,
+		AgentState: make([]anyrnn.State, 3),
+	}
+	return res, nil
 }
 
 // Reset resets the environment and the RNN state.

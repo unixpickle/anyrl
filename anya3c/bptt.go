@@ -13,6 +13,7 @@ type bptt struct {
 	Worker      *worker
 	Discount    float64
 	Regularizer anypg.Regularizer
+	Logger      Logger
 }
 
 // Run performs back-propagation through time.
@@ -71,6 +72,9 @@ func (b *bptt) actorUpstream(params, sampled anyvec.Vector,
 		penalty := b.Regularizer.Regularize(paramVar, 1)
 		upstream.SetData(c.MakeNumericList([]float64{1}))
 		penalty.Propagate(upstream, grad)
+		if b.Logger != nil {
+			b.Logger.LogRegularize(b.Worker.ID, anyvec.Sum(penalty.Output()))
+		}
 	}
 
 	return grad[paramVar]
