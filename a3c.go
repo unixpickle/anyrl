@@ -55,6 +55,13 @@ type A3C struct {
 	//
 	// If nil, vanilla gradients are used.
 	Transformer anysgd.Transformer
+
+	// Set these to enable entropy regularization.
+	//
+	// A term is added to every timestep of the form
+	// EntropyReg*H(policy(state)).
+	Entropyer  Entropyer
+	EntropyReg float64
 }
 
 // Run runs A3C with a different actor thread for each
@@ -197,6 +204,13 @@ func (a *A3C) actorUpstream(params, choice anyvec.Vector,
 	upstream := c.MakeVector(1)
 	upstream.AddScalar(advantage)
 	a.ActionSpace.LogProb(v, choice, 1).Propagate(upstream, g)
+
+	if a.Entropyer != nil && a.EntropyReg != 0 {
+		ent := a.Entropyer.Entropy(v, 1)
+		upstream.SetData(c.MakeNumericList([]float64{a.EntropyReg}))
+		ent.Propagate(upstream, g)
+	}
+
 	return g[v]
 }
 
