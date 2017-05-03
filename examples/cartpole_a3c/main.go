@@ -7,6 +7,7 @@ import (
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anynet/anysgd"
 	"github.com/unixpickle/anyrl"
+	"github.com/unixpickle/anyrl/anya3c"
 	"github.com/unixpickle/anyvec/anyvec32"
 	gym "github.com/unixpickle/gym-socket-api/binding-go"
 	"github.com/unixpickle/rip"
@@ -55,7 +56,7 @@ func main() {
 	}
 
 	// Train via A3C, stopping on Ctrl+C.
-	a3c := &anyrl.A3C{
+	a3c := &anya3c.A3C{
 		PolicyBase:   policyBase,
 		PolicyActor:  policyActor,
 		PolicyCritic: policyCritic,

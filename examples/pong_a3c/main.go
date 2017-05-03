@@ -9,6 +9,7 @@ import (
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anynet/anysgd"
 	"github.com/unixpickle/anyrl"
+	"github.com/unixpickle/anyrl/anya3c"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec32"
 	gym "github.com/unixpickle/gym-socket-api/binding-go"
@@ -52,7 +53,7 @@ func main() {
 	base, actor, critic := loadOrCreateNetwork(creator)
 	actionSampler := anyrl.Softmax{}
 
-	a3c := &anyrl.A3C{
+	a3c := &anya3c.A3C{
 		PolicyBase:   base,
 		PolicyActor:  actor,
 		PolicyCritic: critic,

@@ -1,4 +1,6 @@
-package anyrl
+// Package anya3c implements Asynchronous Advantage
+// Actor-Critic for Reinforcement Learning.
+package anya3c
 
 import (
 	"fmt"
@@ -8,14 +10,15 @@ import (
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anynet/anysgd"
+	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/essentials"
 	"github.com/unixpickle/serializer"
 )
 
 type A3CActionSpace interface {
-	Sampler
-	LogProber
+	anyrl.Sampler
+	anyrl.LogProber
 }
 
 // A3C implements asynchronous advantage actor-critic.
@@ -61,7 +64,7 @@ type A3C struct {
 	//
 	// A term is added to every timestep of the form
 	// EntropyReg*H(policy(state)).
-	Entropyer  Entropyer
+	Entropyer  anyrl.Entropyer
 	EntropyReg float64
 }
 
@@ -73,7 +76,7 @@ type A3C struct {
 //
 // If any environment produces an error, this stops and
 // returns the error.
-func (a *A3C) Run(envs []Env, done <-chan struct{}) (err error) {
+func (a *A3C) Run(envs []anyrl.Env, done <-chan struct{}) (err error) {
 	defer essentials.AddCtxTo("run A3C", &err)
 
 	errChan := make(chan error, len(envs))
@@ -85,7 +88,7 @@ func (a *A3C) Run(envs []Env, done <-chan struct{}) (err error) {
 	var wg sync.WaitGroup
 	for i, e := range envs {
 		wg.Add(1)
-		go func(i int, e Env) {
+		go func(i int, e anyrl.Env) {
 			defer wg.Done()
 			if err := a.worker(i, e, globals); err != nil {
 				errChan <- err
@@ -103,7 +106,7 @@ func (a *A3C) Run(envs []Env, done <-chan struct{}) (err error) {
 	return
 }
 
-func (a *A3C) worker(id int, e Env, g *a3cGlobals) error {
+func (a *A3C) worker(id int, e anyrl.Env, g *a3cGlobals) error {
 	locals, err := newA3CLocals(e, a, g)
 	if err != nil {
 		return err
@@ -265,13 +268,13 @@ type a3cLocals struct {
 	LocalToGlobal map[*anydiff.Var]*anydiff.Var
 	GlobalToLocal map[*anydiff.Var]*anydiff.Var
 
-	Env       Env
+	Env       anyrl.Env
 	EnvState  anyvec.Vector
 	EnvDone   bool
 	RewardSum float64
 }
 
-func newA3CLocals(e Env, a *A3C, g *a3cGlobals) (*a3cLocals, error) {
+func newA3CLocals(e anyrl.Env, a *A3C, g *a3cGlobals) (*a3cLocals, error) {
 	startState, err := e.Reset()
 	if err != nil {
 		return nil, err
