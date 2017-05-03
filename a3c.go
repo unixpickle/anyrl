@@ -9,6 +9,7 @@ import (
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anynet/anysgd"
 	"github.com/unixpickle/anyvec"
+	"github.com/unixpickle/essentials"
 	"github.com/unixpickle/serializer"
 )
 
@@ -72,10 +73,13 @@ type A3C struct {
 //
 // If any environment produces an error, this stops and
 // returns the error.
-func (a *A3C) Run(envs []Env, done <-chan struct{}) error {
+func (a *A3C) Run(envs []Env, done <-chan struct{}) (err error) {
+	defer essentials.AddCtxTo("run A3C", &err)
+
 	errChan := make(chan error, len(envs))
+	stopChan := make(chan struct{})
 	globals := &a3cGlobals{
-		DoneChan: done,
+		DoneChan: stopChan,
 	}
 
 	var wg sync.WaitGroup
@@ -89,9 +93,14 @@ func (a *A3C) Run(envs []Env, done <-chan struct{}) error {
 		}(i, e)
 	}
 
+	select {
+	case err = <-errChan:
+	case <-done:
+	}
+	close(stopChan)
+
 	wg.Wait()
-	close(errChan)
-	return <-errChan
+	return
 }
 
 func (a *A3C) worker(id int, e Env, g *a3cGlobals) error {
