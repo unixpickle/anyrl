@@ -195,7 +195,7 @@ func (p *paramServer) Sync(l *LocalAgent) (err error) {
 }
 
 func (p *paramServer) Update(g anydiff.Grad, l *LocalAgent) (err error) {
-	defer essentials.AddCtxTo("sync local agent", &err)
+	defer essentials.AddCtxTo("update global agent", &err)
 
 	p.CloseLock.RLock()
 	defer p.CloseLock.RUnlock()
