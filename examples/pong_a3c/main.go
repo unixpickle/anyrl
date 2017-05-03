@@ -102,12 +102,15 @@ func loadOrCreateAgent(creator anyvec.Creator) *anya3c.Agent {
 		}
 		res.Actor = &anyrnn.LayerBlock{
 			Layer: anynet.Net{
+				// Zero initialization encourages random exploration.
 				anynet.NewFCZero(creator, 256, 6),
 			},
 		}
 		res.Critic = &anyrnn.LayerBlock{
 			Layer: anynet.Net{
-				anynet.NewFCZero(creator, 256, 1),
+				// Don't zero initialize; it messes up RMSProp when
+				// the first reward is finally seen.
+				anynet.NewFC(creator, 256, 1),
 			},
 		}
 		return &res
