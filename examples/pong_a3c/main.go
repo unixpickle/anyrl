@@ -10,6 +10,7 @@ import (
 	"github.com/unixpickle/anynet/anysgd"
 	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyrl/anya3c"
+	"github.com/unixpickle/anyrl/anypg"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec32"
 	gym "github.com/unixpickle/gym-socket-api/binding-go"
@@ -66,8 +67,10 @@ func main() {
 		Discount:    0.99,
 		MaxSteps:    5,
 		Transformer: &anysgd.RMSProp{DecayRate: 0.99},
-		Entropyer:   actionSampler,
-		EntropyReg:  0.01,
+		Regularizer: &anypg.EntropyReg{
+			Entropyer: actionSampler,
+			Coeff:     0.01,
+		},
 	}
 
 	log.Println("Press Ctrl+C to stop.")

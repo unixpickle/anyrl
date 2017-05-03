@@ -11,6 +11,7 @@ import (
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anynet/anysgd"
 	"github.com/unixpickle/anyrl"
+	"github.com/unixpickle/anyrl/anypg"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/essentials"
 	"github.com/unixpickle/serializer"
@@ -60,12 +61,11 @@ type A3C struct {
 	// If nil, vanilla gradients are used.
 	Transformer anysgd.Transformer
 
-	// Set these to enable entropy regularization.
+	// Regularizer is used to regularize the actor's
+	// action space.
 	//
-	// A term is added to every timestep of the form
-	// EntropyReg*H(policy(state)).
-	Entropyer  anyrl.Entropyer
-	EntropyReg float64
+	// If nil, no regularization is used.
+	Regularizer anypg.Regularizer
 }
 
 // Run runs A3C with a different actor thread for each
@@ -217,10 +217,10 @@ func (a *A3C) actorUpstream(params, choice anyvec.Vector,
 	upstream.AddScalar(advantage)
 	a.ActionSpace.LogProb(v, choice, 1).Propagate(upstream, g)
 
-	if a.Entropyer != nil && a.EntropyReg != 0 {
-		ent := a.Entropyer.Entropy(v, 1)
-		upstream.SetData(c.MakeNumericList([]float64{a.EntropyReg}))
-		ent.Propagate(upstream, g)
+	if a.Regularizer != nil {
+		penalty := a.Regularizer.Regularize(v, 1)
+		upstream.SetData(c.MakeNumericList([]float64{1}))
+		penalty.Propagate(upstream, g)
 	}
 
 	return g[v]

@@ -24,12 +24,10 @@ type PG struct {
 	// If nil, TotalJudger is used.
 	ActionJudger ActionJudger
 
-	// Set these to enable entropy regularization.
+	// Regularizer is used to regularize the action space.
 	//
-	// A term is added to every timestep of the form
-	// EntropyReg*H(policy(state)).
-	Entropyer  anyrl.Entropyer
-	EntropyReg float64
+	// If nil, no regularization is used.
+	Regularizer Regularizer
 }
 
 // Run performs policy gradients on the rollouts.
@@ -51,10 +49,8 @@ func (p *PG) Run(r *anyrl.RolloutSet) anydiff.Grad {
 		rewards := v[2]
 		logProb := p.ActionSpace.LogProb(actionParams, selected.Output(), n)
 		cost := anydiff.Mul(logProb, rewards)
-		if p.Entropyer != nil && p.EntropyReg != 0 {
-			entropy := p.Entropyer.Entropy(actionParams, n)
-			cost = anydiff.Add(cost, anydiff.Scale(entropy,
-				c.MakeNumeric(p.EntropyReg)))
+		if p.Regularizer != nil {
+			cost = anydiff.Add(cost, p.Regularizer.Regularize(actionParams, n))
 		}
 		return cost
 	}, policyOut, selectedOuts, rewards)
