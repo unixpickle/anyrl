@@ -6,6 +6,7 @@ import (
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyrl"
+	"github.com/unixpickle/anyrl/anypg"
 	"github.com/unixpickle/anyvec/anyvec32"
 	gym "github.com/unixpickle/gym-socket-api/binding-go"
 )
@@ -54,8 +55,8 @@ func main() {
 	must(err)
 
 	// Setup Trust Region Policy Optimization for training.
-	trpo := &anyrl.TRPO{
-		NaturalPG: anyrl.NaturalPG{
+	trpo := &anypg.TRPO{
+		NaturalPG: anypg.NaturalPG{
 			Policy:      policy,
 			Params:      policy.Parameters(),
 			ActionSpace: actionSampler,

@@ -1,10 +1,11 @@
-package anyrl
+package anypg
 
 import (
 	"testing"
 
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
+	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec/anyvec64"
 	"github.com/unixpickle/lazyseq"
 )
@@ -25,7 +26,7 @@ func TestTRPO(t *testing.T) {
 		NaturalPG: NaturalPG{
 			Policy:      block,
 			Params:      block.Parameters(),
-			ActionSpace: Softmax{},
+			ActionSpace: anyrl.Softmax{},
 			Iters:       14,
 		},
 	}

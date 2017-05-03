@@ -1,10 +1,11 @@
-package anyrl
+package anypg
 
 import (
 	"reflect"
 	"testing"
 
 	"github.com/unixpickle/anydiff/anyseq"
+	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec64"
 	"github.com/unixpickle/lazyseq"
@@ -28,7 +29,7 @@ func TestQJudger(t *testing.T) {
 	}
 	close(writer)
 
-	tapeOut := QJudger{}.JudgeActions(&RolloutSet{Rewards: tapeIn})
+	tapeOut := QJudger{}.JudgeActions(&anyrl.RolloutSet{Rewards: tapeIn})
 	expected := []*anyseq.Batch{
 		{
 			Present: []bool{true, false, true},
@@ -72,7 +73,7 @@ func TestTotalJudger(t *testing.T) {
 	// Normalized:  1.260131  -0.074125  -1.186005
 
 	judger := &TotalJudger{Normalize: true}
-	tapeOut := judger.JudgeActions(&RolloutSet{Rewards: tapeIn})
+	tapeOut := judger.JudgeActions(&anyrl.RolloutSet{Rewards: tapeIn})
 	expected := []*anyseq.Batch{
 		{
 			Present: []bool{true, false, true, true},

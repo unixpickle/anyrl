@@ -11,11 +11,30 @@ import (
 // TotalRewards sums the rewards for each sequence of
 // rewards.
 func TotalRewards(c anyvec.Creator, rewards lazyseq.Tape) anyvec.Vector {
-	sum := rewardSum(rewards)
+	sum := TotalRewardsBatch(rewards)
 	if sum == nil {
 		return c.MakeVector(0)
 	}
 	return sum.Packed
+}
+
+// TotalRewardsBatch is like TotalRewards except that it
+// preserves the sequence present map.
+//
+// This returns nil if there are no timesteps.
+func TotalRewardsBatch(rewards lazyseq.Tape) *anyseq.Batch {
+	var sum *anyseq.Batch
+	for batch := range rewards.ReadTape(0, -1) {
+		if sum == nil {
+			sum = &anyseq.Batch{
+				Present: batch.Present,
+				Packed:  batch.Packed.Copy(),
+			}
+		} else {
+			sum.Packed.Add(batch.Expand(sum.Present).Packed)
+		}
+	}
+	return sum
 }
 
 // MeanReward sums the rewards for each sequence, then
@@ -51,21 +70,6 @@ func DiscountedRewards(rewards lazyseq.Tape, factor float64) lazyseq.Tape {
 
 	close(writer)
 	return res
-}
-
-func rewardSum(rewards lazyseq.Tape) *anyseq.Batch {
-	var sum *anyseq.Batch
-	for batch := range rewards.ReadTape(0, -1) {
-		if sum == nil {
-			sum = &anyseq.Batch{
-				Present: batch.Present,
-				Packed:  batch.Packed.Copy(),
-			}
-		} else {
-			sum.Packed.Add(batch.Expand(sum.Present).Packed)
-		}
-	}
-	return sum
 }
 
 func sampleMean(vec anyvec.Vector) anyvec.Numeric {

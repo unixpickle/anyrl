@@ -1,4 +1,4 @@
-package anyrl
+package anypg
 
 import (
 	"github.com/unixpickle/anydiff"
@@ -6,6 +6,7 @@ import (
 	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
+	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyseq"
 	"github.com/unixpickle/lazyseq/lazyrnn"
@@ -18,8 +19,8 @@ const DefaultConjGradIters = 10
 // NaturalActionSpace implements the action space methods
 // necessary to run natural policy gradients.
 type NaturalActionSpace interface {
-	LogProber
-	KLer
+	anyrl.LogProber
+	anyrl.KLer
 }
 
 // NaturalPG implements natural policy gradients.
@@ -57,18 +58,18 @@ type NaturalPG struct {
 	// For an example of something to use, see FracReducer.
 	//
 	// If nil, all rollouts are used.
-	Reduce func(in *RolloutSet) *RolloutSet
+	Reduce func(in *anyrl.RolloutSet) *anyrl.RolloutSet
 
 	// Set these to enable entropy regularization.
 	//
 	// A term is added to every timestep of the form
 	// EntropyReg*H(policy(state)).
-	Entropyer  Entropyer
+	Entropyer  anyrl.Entropyer
 	EntropyReg float64
 }
 
 // Run computes the natural gradient for the rollouts.
-func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
+func (n *NaturalPG) Run(r *anyrl.RolloutSet) anydiff.Grad {
 	var seq lazyseq.Reuser
 	pg := &PG{
 		Policy: func(in lazyseq.Rereader) lazyseq.Rereader {
@@ -102,7 +103,7 @@ func (n *NaturalPG) Run(r *RolloutSet) anydiff.Grad {
 	return grad
 }
 
-func (n *NaturalPG) conjugateGradients(r *RolloutSet, policyOuts lazyseq.Reuser,
+func (n *NaturalPG) conjugateGradients(r *anyrl.RolloutSet, policyOuts lazyseq.Reuser,
 	grad anydiff.Grad) {
 	c := creatorFromGrad(grad)
 	ops := c.NumOps()
@@ -155,7 +156,7 @@ func (n *NaturalPG) conjugateGradients(r *RolloutSet, policyOuts lazyseq.Reuser,
 	setGrad(grad, x)
 }
 
-func (n *NaturalPG) applyFisher(r *RolloutSet, grad anydiff.Grad,
+func (n *NaturalPG) applyFisher(r *anyrl.RolloutSet, grad anydiff.Grad,
 	oldOuts lazyseq.Rereader) anydiff.Grad {
 	c := &anyfwd.Creator{
 		ValueCreator: creatorFromGrad(grad),

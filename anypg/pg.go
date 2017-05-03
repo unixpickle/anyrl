@@ -1,7 +1,8 @@
-package anyrl
+package anypg
 
 import (
 	"github.com/unixpickle/anydiff"
+	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyseq"
 )
@@ -15,7 +16,7 @@ import (
 // The JudgeActions method produces a tape of the same
 // dimensions as the tape of rewards.
 type ActionJudger interface {
-	JudgeActions(rollouts *RolloutSet) lazyseq.Tape
+	JudgeActions(rollouts *anyrl.RolloutSet) lazyseq.Tape
 }
 
 // PG implements vanilla policy gradients.
@@ -28,7 +29,7 @@ type PG struct {
 	Params []*anydiff.Var
 
 	// ActionSpace determines log-likelihoods of actions.
-	ActionSpace LogProber
+	ActionSpace anyrl.LogProber
 
 	// ActionJudger is used to judge actions.
 	//
@@ -39,12 +40,12 @@ type PG struct {
 	//
 	// A term is added to every timestep of the form
 	// EntropyReg*H(policy(state)).
-	Entropyer  Entropyer
+	Entropyer  anyrl.Entropyer
 	EntropyReg float64
 }
 
 // Run performs policy gradients on the rollouts.
-func (p *PG) Run(r *RolloutSet) anydiff.Grad {
+func (p *PG) Run(r *anyrl.RolloutSet) anydiff.Grad {
 	grad := anydiff.NewGrad(p.Params...)
 	if len(grad) == 0 {
 		return grad
@@ -93,8 +94,8 @@ type QJudger struct{}
 // JudgeActions transforms the rewards so that each reward
 // is replaced with the sum of all the rewards from that
 // timestep to the end of the episode.
-func (q QJudger) JudgeActions(r *RolloutSet) lazyseq.Tape {
-	sum := rewardSum(r.Rewards)
+func (q QJudger) JudgeActions(r *anyrl.RolloutSet) lazyseq.Tape {
+	sum := anyrl.TotalRewardsBatch(r.Rewards)
 
 	resTape, writer := lazyseq.ReferenceTape()
 
@@ -130,8 +131,8 @@ type TotalJudger struct {
 
 // JudgeActions repeats the cumulative rewards at every
 // timestep in a tape.
-func (t *TotalJudger) JudgeActions(r *RolloutSet) lazyseq.Tape {
-	sum := rewardSum(r.Rewards)
+func (t *TotalJudger) JudgeActions(r *anyrl.RolloutSet) lazyseq.Tape {
+	sum := anyrl.TotalRewardsBatch(r.Rewards)
 	if sum == nil {
 		return r.Rewards
 	}

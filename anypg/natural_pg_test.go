@@ -1,4 +1,4 @@
-package anyrl
+package anypg
 
 import (
 	"math"
@@ -8,6 +8,7 @@ import (
 	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
+	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec64"
 	"github.com/unixpickle/lazyseq"
@@ -28,7 +29,7 @@ func TestFisherDeterministic(t *testing.T) {
 	npg := &NaturalPG{
 		Policy:      block,
 		Params:      block.Parameters(),
-		ActionSpace: Softmax{},
+		ActionSpace: anyrl.Softmax{},
 		Iters:       14,
 	}
 
@@ -68,7 +69,7 @@ func TestFisher(t *testing.T) {
 		NaturalPG: NaturalPG{
 			Policy:      block,
 			Params:      block.Parameters(),
-			ActionSpace: Softmax{},
+			ActionSpace: anyrl.Softmax{},
 			Iters:       14,
 		},
 	}
@@ -112,7 +113,7 @@ func TestConjugateGradients(t *testing.T) {
 	npg := &NaturalPG{
 		Policy:      block,
 		Params:      block.Parameters(),
-		ActionSpace: Softmax{},
+		ActionSpace: anyrl.Softmax{},
 		Iters:       14,
 	}
 
@@ -170,7 +171,7 @@ func BenchmarkFisher(b *testing.B) {
 	npg := &NaturalPG{
 		Policy:      block,
 		Params:      block.Parameters(),
-		ActionSpace: Softmax{},
+		ActionSpace: anyrl.Softmax{},
 	}
 
 	inGrad := anydiff.NewGrad(block.Parameters()...)
@@ -188,7 +189,7 @@ func BenchmarkFisher(b *testing.B) {
 	}
 }
 
-func rolloutsForTest(c anyvec.Creator) *RolloutSet {
+func rolloutsForTest(c anyvec.Creator) *anyrl.RolloutSet {
 	inputs, inputWriter := lazyseq.ReferenceTape()
 	rewards, rewardWriter := lazyseq.ReferenceTape()
 	sampledOuts, sampledOutsWriter := lazyseq.ReferenceTape()
@@ -237,13 +238,11 @@ func rolloutsForTest(c anyvec.Creator) *RolloutSet {
 	close(rewardWriter)
 	close(sampledOutsWriter)
 
-	rollouts := &RolloutSet{
+	rollouts := &anyrl.RolloutSet{
 		Inputs:      inputs,
 		Rewards:     rewards,
 		SampledOuts: sampledOuts,
 	}
-
-	// TODO: create rewards and outputs as well.
 
 	return rollouts
 }

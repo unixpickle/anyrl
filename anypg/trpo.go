@@ -1,8 +1,9 @@
-package anyrl
+package anypg
 
 import (
 	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anydiff/anyseq"
+	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyseq"
 )
@@ -51,7 +52,7 @@ type TRPO struct {
 // This may temporarily modify the policy.
 // Thus, it is not safe to use Run() while using the
 // policy on a different Goroutine.
-func (t *TRPO) Run(r *RolloutSet) anydiff.Grad {
+func (t *TRPO) Run(r *anyrl.RolloutSet) anydiff.Grad {
 	grad := t.NaturalPG.Run(r)
 	if len(grad) == 0 || allZeros(grad) {
 		return grad
@@ -73,7 +74,7 @@ func (t *TRPO) Run(r *RolloutSet) anydiff.Grad {
 	return grad
 }
 
-func (t *TRPO) stepSize(r *RolloutSet, grad anydiff.Grad,
+func (t *TRPO) stepSize(r *anyrl.RolloutSet, grad anydiff.Grad,
 	outSeq lazyseq.Rereader) anyvec.Numeric {
 	c := creatorFromGrad(grad)
 	dotProd := dotGrad(grad, t.applyFisher(r, grad, outSeq))
@@ -85,7 +86,8 @@ func (t *TRPO) stepSize(r *RolloutSet, grad anydiff.Grad,
 	return anyvec.Sum(resVec)
 }
 
-func (t *TRPO) acceptable(r *RolloutSet, grad anydiff.Grad, outs lazyseq.Tape) bool {
+func (t *TRPO) acceptable(r *anyrl.RolloutSet, grad anydiff.Grad,
+	outs lazyseq.Tape) bool {
 	backup := t.backupParams()
 	grad.AddToVars()
 	defer t.restoreParams(backup)
@@ -137,8 +139,8 @@ func (t *TRPO) acceptable(r *RolloutSet, grad anydiff.Grad, outs lazyseq.Tape) b
 // It also returns a lazyseq.Reuser for the output.
 // The lazyseq.Reuser will be used, so you must call
 // Reuse() on it before using it again.
-func (n *NaturalPG) storePolicyOutputs(c anyvec.Creator, r *RolloutSet) (lazyseq.Tape,
-	lazyseq.Reuser) {
+func (n *NaturalPG) storePolicyOutputs(c anyvec.Creator,
+	r *anyrl.RolloutSet) (lazyseq.Tape, lazyseq.Reuser) {
 	tape, writer := lazyseq.ReferenceTape()
 
 	out := lazyseq.MakeReuser(n.apply(lazyseq.TapeRereader(c, r.Inputs), n.Policy))
