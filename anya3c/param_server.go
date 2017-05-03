@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/unixpickle/anydiff"
-	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anysgd"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/essentials"
@@ -137,8 +136,8 @@ func (p *paramServer) LocalCopy() (agent *LocalAgent, err error) {
 	}
 
 	globalToLocal := map[*anydiff.Var]*anydiff.Var{}
-	locals := anynet.AllParameters(copied.Base, copied.Actor, copied.Critic)
-	globals := anynet.AllParameters(p.Agent.Base, p.Agent.Actor, p.Agent.Critic)
+	locals := copied.AllParameters()
+	globals := p.Agent.AllParameters()
 	for i, globalParam := range globals {
 		globalToLocal[globalParam] = locals[i]
 	}

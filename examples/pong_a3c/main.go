@@ -50,25 +50,19 @@ func main() {
 		envs = append(envs, &PreprocessEnv{Env: env})
 	}
 
-	// Create a neural network policy.
-	base, actor, critic := loadOrCreateNetwork(creator)
-	actionSampler := anyrl.Softmax{}
+	// Create a neural network agent.
+	agent := loadOrCreateAgent(creator)
+
+	paramServer := anya3c.RMSPropParamServer(agent, agent.AllParameters(),
+		0.001, anysgd.RMSProp{DecayRate: 0.99})
 
 	a3c := &anya3c.A3C{
-		PolicyBase:   base,
-		PolicyActor:  actor,
-		PolicyCritic: critic,
-		ActionSpace:  actionSampler,
-		Params:       anynet.AllParameters(base, actor, critic),
-		StepSize:     0.001,
-		Log: func(str string) {
-			log.Println(str)
-		},
+		ParamServer: paramServer,
+		Logger:      &anya3c.StandardLogger{Episode: true},
 		Discount:    0.99,
 		MaxSteps:    5,
-		Transformer: &anysgd.RMSProp{DecayRate: 0.99},
 		Regularizer: &anypg.EntropyReg{
-			Entropyer: actionSampler,
+			Entropyer: anyrl.Softmax{},
 			Coeff:     0.01,
 		},
 	}
@@ -80,16 +74,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	must(serializer.SaveAny(NetworkSaveFile, base, actor, critic))
+	// Necessary to safely save the agent.
+	paramServer.Close()
+
+	must(serializer.SaveAny(NetworkSaveFile, agent.Base, agent.Actor, agent.Critic))
 }
 
-func loadOrCreateNetwork(creator anyvec.Creator) (base, actor, critic *anyrnn.LayerBlock) {
-	if err := serializer.LoadAny(NetworkSaveFile, &base, &actor, &critic); err == nil {
+func loadOrCreateAgent(creator anyvec.Creator) *anya3c.Agent {
+	var res anya3c.Agent
+	res.ActionSpace = anyrl.Softmax{}
+	err := serializer.LoadAny(NetworkSaveFile, &res.Base, &res.Actor, &res.Critic)
+	if err == nil {
 		log.Println("Loaded network from file.")
-		return
+		return &res
 	} else {
 		log.Println("Created new network.")
-		base = &anyrnn.LayerBlock{
+		res.Base = &anyrnn.LayerBlock{
 			Layer: anynet.Net{
 				// Most inputs are 0, so we can amplify the effect
 				// of non-zero inputs a bit.
@@ -100,17 +100,17 @@ func loadOrCreateNetwork(creator anyvec.Creator) (base, actor, critic *anyrnn.La
 				anynet.ReLU,
 			},
 		}
-		actor = &anyrnn.LayerBlock{
+		res.Actor = &anyrnn.LayerBlock{
 			Layer: anynet.Net{
 				anynet.NewFCZero(creator, 256, 6),
 			},
 		}
-		critic = &anyrnn.LayerBlock{
+		res.Critic = &anyrnn.LayerBlock{
 			Layer: anynet.Net{
 				anynet.NewFCZero(creator, 256, 1),
 			},
 		}
-		return
+		return &res
 	}
 }
 

@@ -2,6 +2,7 @@ package anya3c
 
 import (
 	"github.com/unixpickle/anydiff"
+	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/essentials"
@@ -28,6 +29,12 @@ type ActionSpace interface {
 type Agent struct {
 	Base, Actor, Critic anyrnn.Block
 	ActionSpace         ActionSpace
+}
+
+// AllParameters finds all of the agent's parameters via
+// anynet.AllParameters.
+func (a *Agent) AllParameters() []*anydiff.Var {
+	return anynet.AllParameters(a.Base, a.Actor, a.Critic)
 }
 
 // Copy produces a copy of the agent.

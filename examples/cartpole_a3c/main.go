@@ -25,23 +25,25 @@ const (
 func main() {
 	// Construct our policy + critic.
 	creator := anyvec32.CurrentCreator()
-	policyBase := &anyrnn.LayerBlock{
-		Layer: anynet.Net{
-			anynet.NewFC(creator, 4, 64),
-			anynet.Tanh,
+	agent := &anya3c.Agent{
+		Base: &anyrnn.LayerBlock{
+			Layer: anynet.Net{
+				anynet.NewFC(creator, 4, 64),
+				anynet.Tanh,
+			},
 		},
-	}
-	policyActor := &anyrnn.LayerBlock{
-		Layer: anynet.NewFCZero(creator, 64, 1),
-	}
-	policyCritic := &anyrnn.LayerBlock{
-		Layer: anynet.Net{
-			anynet.NewFC(creator, 64, 32),
-			anynet.ReLU,
-			anynet.NewFCZero(creator, 32, 1),
+		Actor: &anyrnn.LayerBlock{
+			Layer: anynet.NewFCZero(creator, 64, 1),
 		},
+		Critic: &anyrnn.LayerBlock{
+			Layer: anynet.Net{
+				anynet.NewFC(creator, 64, 32),
+				anynet.ReLU,
+				anynet.NewFCZero(creator, 32, 1),
+			},
+		},
+		ActionSpace: &anyrl.Bernoulli{OneHot: true},
 	}
-	actionSpace := &anyrl.Bernoulli{OneHot: true}
 
 	// Create environments.
 	envs := make([]anyrl.Env, Workers)
@@ -56,21 +58,14 @@ func main() {
 	}
 
 	// Train via A3C, stopping on Ctrl+C.
+	paramServer := anya3c.RMSPropParamServer(agent, agent.AllParameters(),
+		StepSize, anysgd.RMSProp{DecayRate: 0.99})
+	defer paramServer.Close()
 	a3c := &anya3c.A3C{
-		PolicyBase:   policyBase,
-		PolicyActor:  policyActor,
-		PolicyCritic: policyCritic,
-
-		ActionSpace: actionSpace,
-		Params:      anynet.AllParameters(policyBase, policyActor, policyCritic),
-		StepSize:    StepSize,
+		ParamServer: paramServer,
+		Logger:      &anya3c.StandardLogger{Episode: true},
 		MaxSteps:    5,
 		Discount:    0.9,
-		Transformer: &anysgd.RMSProp{DecayRate: 0.99},
-
-		Log: func(str string) {
-			log.Println(str)
-		},
 	}
 
 	log.Println("Press Ctrl+C to stop learning.")
