@@ -1,6 +1,7 @@
 package anya3c
 
 import (
+	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/essentials"
@@ -43,4 +44,16 @@ func (a *Agent) Copy() (*Agent, error) {
 		*dstBlocks[i] = copied.(anyrnn.Block)
 	}
 	return res, nil
+}
+
+// A LocalAgent is a local copy of a global agent.
+type LocalAgent struct {
+	*Agent
+
+	// Params indicates which parameters in the RNNs to
+	// optimize.
+	//
+	// The order here matters, as it makes it possible
+	// to map between global and local parameters.
+	Params []*anydiff.Var
 }

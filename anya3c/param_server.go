@@ -16,18 +16,6 @@ import (
 // is already closed.
 var errClosed = errors.New("parameter server is closed")
 
-// A LocalAgent is a local copy of a global agent.
-type LocalAgent struct {
-	*Agent
-
-	// Params indicates which parameters in the RNNs to
-	// optimize.
-	//
-	// The order here matters, as it makes it possible
-	// to map between global and local parameters.
-	Params []*anydiff.Var
-}
-
 // A ParamServer manages a shared set of parameters.
 type ParamServer interface {
 	// LocalCopy creates a copy of the global agent
