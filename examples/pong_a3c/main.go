@@ -22,7 +22,7 @@ const (
 )
 
 const (
-	RenderEnv = true
+	RenderEnv = false
 
 	NetworkSaveFile = "trained_policy"
 )
