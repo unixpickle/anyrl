@@ -103,6 +103,11 @@ func (a *A3C) update(w *worker) error {
 	if err := a.ParamServer.Sync(w.Agent); err != nil {
 		return err
 	}
+
+	// We just updated our parameters, so the old outputs
+	// don't reflect the current probability distribution.
+	w.AgentRes = nil
+
 	r, err := runRollout(w, a.MaxSteps)
 	if err != nil {
 		return err
