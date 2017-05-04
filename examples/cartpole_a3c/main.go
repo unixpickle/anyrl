@@ -63,9 +63,20 @@ func main() {
 	defer paramServer.Close()
 	a3c := &anya3c.A3C{
 		ParamServer: paramServer,
-		Logger:      &anya3c.StandardLogger{Episode: true},
-		MaxSteps:    5,
-		Discount:    0.9,
+
+		// Log out reward averages and critic MSE averages.
+		Logger: &anya3c.AvgLogger{
+			Creator: creator,
+			Logger: &anya3c.StandardLogger{
+				Episode: true,
+				Update:  true,
+			},
+			Episode: 30,
+			Update:  3000,
+		},
+
+		MaxSteps: 5,
+		Discount: 0.9,
 	}
 
 	log.Println("Press Ctrl+C to stop learning.")
