@@ -54,6 +54,12 @@ func (b *bptt) Run() anydiff.Grad {
 			stateUpstream[0], grad)
 	}
 
+	if b.Rollout.Beginning {
+		for i, block := range b.Worker.blocks() {
+			block.PropagateStart(stateUpstream[i], grad)
+		}
+	}
+
 	return grad
 }
 

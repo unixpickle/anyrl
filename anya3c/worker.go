@@ -16,6 +16,7 @@ type worker struct {
 	// Results from latest StepEnv or Reset.
 	EnvObs  anyvec.Vector
 	EnvDone bool
+	StepIdx int
 
 	// AgentRes is the result of applying the RNN to the
 	// current EnvObs.
@@ -66,6 +67,7 @@ func (w *worker) Reset() error {
 	}
 	w.AgentRes = nil
 	w.RewardSum = 0
+	w.StepIdx = 0
 	return nil
 }
 
@@ -98,6 +100,7 @@ func (w *worker) StepEnv() (reward float64, action anyvec.Vector, err error) {
 	}
 	w.RewardSum += reward
 	w.AgentRes = nil
+	w.StepIdx++
 	return
 }
 

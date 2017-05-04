@@ -8,6 +8,10 @@ import (
 // rollout represents a (partial) trajectory through an
 // environment.
 type rollout struct {
+	// Beginning is true if the rollout started at the
+	// beginning of the episode.
+	Beginning bool
+
 	Outs    [][]anyrnn.Res
 	Rewards []float64
 	Sampled []anyvec.Vector
@@ -20,6 +24,7 @@ type rollout struct {
 // timesteps in the environment.
 func runRollout(w *worker, maxSteps int) (*rollout, error) {
 	var r rollout
+	r.Beginning = w.StepIdx == 0
 	for t := 0; t < maxSteps || maxSteps == 0; t++ {
 		w.StepAgent()
 		lastOut := w.AgentRes
