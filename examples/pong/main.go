@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/unixpickle/anynet"
+	"github.com/unixpickle/anynet/anymisc"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyrl/anypg"
@@ -13,6 +14,7 @@ import (
 	"github.com/unixpickle/anyvec/anyvec32"
 	gym "github.com/unixpickle/gym-socket-api/binding-go"
 	"github.com/unixpickle/lazyseq"
+	"github.com/unixpickle/lazyseq/lazyrnn"
 	"github.com/unixpickle/rip"
 	"github.com/unixpickle/serializer"
 )
@@ -20,7 +22,7 @@ import (
 const (
 	Host         = "localhost:5001"
 	ParallelEnvs = 8
-	BatchSize    = 32 / ParallelEnvs
+	BatchSteps   = 100000
 )
 
 const (
@@ -61,12 +63,17 @@ func main() {
 			Params:      policy.Parameters(),
 			ActionSpace: actionSampler,
 
-			ApplyPolicy: func(seq lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader {
-				// Utilize the fact that the model is feed-forward.
-				out := lazyseq.Map(seq, b.(*anyrnn.LayerBlock).Layer.Apply)
+			// Speed things up a bit.
+			Iters: 4,
 
-				// Stores the RNN outputs in memory, but nothing else.
+			ApplyPolicy: func(seq lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader {
+				out := lazyrnn.FixedHSM(30, false, seq, b)
 				return lazyseq.Lazify(lazyseq.Unlazify(out))
+			},
+
+			Regularizer: &anypg.EntropyReg{
+				Entropyer: actionSampler,
+				Coeff:     0.01,
 			},
 		},
 	}
@@ -80,9 +87,11 @@ func main() {
 
 			// Gather episode rollouts.
 			var rollouts []*anyrl.RolloutSet
-			for i := 0; i < BatchSize; i++ {
+			var steps int
+			for steps < BatchSteps {
 				rollout := rollout(creator, policy, envs)
-				log.Printf("batch %d: sub_batch=%d mean_reward=%v", batchIdx, i,
+				steps += rollout.NumSteps()
+				log.Printf("batch %d: steps=%d sub_mean=%v", batchIdx, steps,
 					rollout.MeanReward(creator))
 				rollouts = append(rollouts, rollout)
 			}
@@ -92,7 +101,7 @@ func main() {
 
 			// Print the stats for the batch.
 			ops := creator.NumOps()
-			log.Printf("batch %d: mean_reward=%v stddev=%v", batchIdx,
+			log.Printf("batch %d: mean=%v stddev=%v", batchIdx,
 				r.MeanReward(creator),
 				ops.Pow(r.RewardVariance(creator), creator.MakeNumeric(0.5)))
 
@@ -114,23 +123,24 @@ func main() {
 	must(serializer.SaveAny(NetworkSaveFile, policy))
 }
 
-func loadOrCreateNetwork(creator anyvec.Creator) *anyrnn.LayerBlock {
-	var res *anyrnn.LayerBlock
+func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
+	var res anyrnn.Stack
 	if err := serializer.LoadAny(NetworkSaveFile, &res); err == nil {
 		log.Println("Loaded network from file.")
 		return res
 	} else {
 		log.Println("Created new network.")
-		return &anyrnn.LayerBlock{
-			Layer: anynet.Net{
-				// Most inputs are 0, so we can amplify the effect
-				// of non-zero inputs a bit.
-				anynet.NewAffine(creator, 8, 0),
-
-				// Fully-connected network with 256 hidden units.
-				anynet.NewFC(creator, PreprocessedSize, 256),
-				anynet.ReLU,
-				anynet.NewFCZero(creator, 256, 6),
+		return anyrnn.Stack{
+			&anyrnn.LayerBlock{
+				Layer: anynet.Net{
+					// Most inputs are 0, so we can amplify the effect
+					// of non-zero inputs a bit.
+					anynet.NewAffine(creator, 8, 0),
+				},
+			},
+			anymisc.NewNPRNN(creator, PreprocessedSize, 256),
+			&anyrnn.LayerBlock{
+				Layer: anynet.NewFCZero(creator, 256, 6),
 			},
 		}
 	}

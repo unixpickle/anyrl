@@ -15,13 +15,14 @@ const (
 type PreprocessEnv struct {
 	Env        anyrl.Env
 	Subsampler anyvec.Mapper
-	Last       anyvec.Vector
 }
 
 func (p *PreprocessEnv) Reset() (observation anyvec.Vector, err error) {
-	p.Last, err = p.Env.Reset()
-	p.Last = p.simplifyImage(p.Last)
-	return p.Last, err
+	observation, err = p.Env.Reset()
+	if observation != nil {
+		observation = p.simplifyImage(observation)
+	}
+	return
 }
 
 func (p *PreprocessEnv) Step(action anyvec.Vector) (observation anyvec.Vector,
@@ -29,9 +30,6 @@ func (p *PreprocessEnv) Step(action anyvec.Vector) (observation anyvec.Vector,
 	observation, reward, done, err = p.Env.Step(action)
 	if observation != nil {
 		observation = p.simplifyImage(observation)
-		backup := observation.Copy()
-		observation.Sub(p.Last)
-		p.Last = backup
 	}
 	return
 }
