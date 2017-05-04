@@ -9,7 +9,7 @@ const (
 	FrameWidth  = 160
 	FrameHeight = 210
 
-	PreprocessedSize = 80 * 80
+	PreprocessedSize = 80 * 80 * 2
 )
 
 type PreprocessEnv struct {
@@ -21,7 +21,7 @@ type PreprocessEnv struct {
 func (p *PreprocessEnv) Reset() (observation anyvec.Vector, err error) {
 	p.Last, err = p.Env.Reset()
 	p.Last = p.simplifyImage(p.Last)
-	return p.Last, err
+	return p.Last.Creator().Concat(p.Last, p.Last), err
 }
 
 func (p *PreprocessEnv) Step(action anyvec.Vector) (observation anyvec.Vector,
@@ -29,9 +29,8 @@ func (p *PreprocessEnv) Step(action anyvec.Vector) (observation anyvec.Vector,
 	observation, reward, done, err = p.Env.Step(action)
 	if observation != nil {
 		observation = p.simplifyImage(observation)
-		backup := observation.Copy()
-		observation.Sub(p.Last)
-		p.Last = backup
+		c := observation.Creator()
+		p.Last, observation = observation, c.Concat(observation, p.Last)
 	}
 	return
 }

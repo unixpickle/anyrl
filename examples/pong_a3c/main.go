@@ -20,13 +20,13 @@ import (
 
 const (
 	Host       = "localhost:5001"
-	NumWorkers = 8
+	NumWorkers = 4
 )
 
 const (
 	RenderEnv = false
 
-	NetworkSaveFile = "trained_policy"
+	NetworkSaveFile = "trained_agent"
 )
 
 func main() {
@@ -54,13 +54,23 @@ func main() {
 	agent := loadOrCreateAgent(creator)
 
 	paramServer := anya3c.RMSPropParamServer(agent, agent.AllParameters(),
-		0.001, anysgd.RMSProp{DecayRate: 0.99})
+		1e-4, anysgd.RMSProp{DecayRate: 0.99})
 
 	a3c := &anya3c.A3C{
 		ParamServer: paramServer,
-		Logger:      &anya3c.StandardLogger{Episode: true},
-		Discount:    0.99,
-		MaxSteps:    5,
+		Logger: &anya3c.AvgLogger{
+			Creator: creator,
+			Logger: &anya3c.StandardLogger{
+				Episode:    true,
+				Update:     true,
+				Regularize: true,
+			},
+			// Only log updates and entropy periodically.
+			Update:     400,
+			Regularize: 8000,
+		},
+		Discount: 0.99,
+		MaxSteps: 20,
 		Regularizer: &anypg.EntropyReg{
 			Entropyer: anyrl.Softmax{},
 			Coeff:     0.01,
@@ -95,22 +105,24 @@ func loadOrCreateAgent(creator anyvec.Creator) *anya3c.Agent {
 				// of non-zero inputs a bit.
 				anynet.NewAffine(creator, 8, 0),
 
-				// Fully-connected network with 256 hidden units.
-				anynet.NewFC(creator, PreprocessedSize, 256),
-				anynet.ReLU,
+				// Fully-connected MLP.
+				anynet.NewFC(creator, PreprocessedSize, 64),
+				anynet.Tanh,
+				anynet.NewFC(creator, 64, 32),
+				anynet.Tanh,
 			},
 		}
 		res.Actor = &anyrnn.LayerBlock{
 			Layer: anynet.Net{
 				// Zero initialization encourages random exploration.
-				anynet.NewFCZero(creator, 256, 6),
+				anynet.NewFCZero(creator, 32, 6),
 			},
 		}
 		res.Critic = &anyrnn.LayerBlock{
 			Layer: anynet.Net{
 				// Don't zero initialize; it messes up RMSProp when
 				// the first reward is finally seen.
-				anynet.NewFC(creator, 256, 1),
+				anynet.NewFC(creator, 32, 1),
 			},
 		}
 		return &res
