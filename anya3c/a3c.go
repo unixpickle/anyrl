@@ -85,9 +85,6 @@ func (a *A3C) worker(id int, env anyrl.Env, stopChan <-chan struct{}) error {
 		if err := a.update(w); err != nil {
 			return err
 		}
-		if a.Logger != nil {
-			a.Logger.LogUpdate(w.ID)
-		}
 		if w.EnvDone {
 			if a.Logger != nil {
 				a.Logger.LogEpisode(w.ID, w.RewardSum)
@@ -117,6 +114,12 @@ func (a *A3C) update(w *worker) error {
 	if bptt.Discount == 0 {
 		bptt.Discount = 1
 	}
-	grad := bptt.Run()
-	return a.ParamServer.Update(grad, w.Agent)
+	grad, mse := bptt.Run()
+	if err := a.ParamServer.Update(grad, w.Agent); err != nil {
+		return err
+	}
+	if a.Logger != nil {
+		a.Logger.LogUpdate(w.ID, mse)
+	}
+	return nil
 }

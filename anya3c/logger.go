@@ -10,7 +10,7 @@ import (
 // A3C training.
 type Logger interface {
 	LogEpisode(workerID int, reward float64)
-	LogUpdate(workerID int)
+	LogUpdate(workerID int, criticMSE anyvec.Numeric)
 	LogRegularize(workerID int, term anyvec.Numeric)
 }
 
@@ -32,9 +32,9 @@ func (s *StandardLogger) LogEpisode(workerID int, reward float64) {
 }
 
 // LogUpdate logs the fact that a step was taken.
-func (s *StandardLogger) LogUpdate(workerID int) {
+func (s *StandardLogger) LogUpdate(workerID int, criticMSE anyvec.Numeric) {
 	if s.Update {
-		log.Printf("update: worker=%d", workerID)
+		log.Printf("update: worker=%d critic_mse=%f", workerID, criticMSE)
 	}
 }
 

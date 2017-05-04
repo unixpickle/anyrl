@@ -20,22 +20,23 @@ type bptt struct {
 //
 // Since BPTT may be bootstrapped, the worker may be used
 // to run the critic on the next observation.
-func (b *bptt) Run() anydiff.Grad {
-	grad := anydiff.NewGrad(b.Worker.Agent.Params...)
+func (b *bptt) Run() (grad anydiff.Grad, criticMSE anyvec.Numeric) {
+	c := b.Worker.EnvObs.Creator()
+	ops := c.NumOps()
+
+	grad = anydiff.NewGrad(b.Worker.Agent.Params...)
+	criticMSE = c.MakeNumeric(0)
 
 	if len(b.Worker.Agent.Params) == 0 {
-		return grad
+		return
 	}
 
 	advantages := b.Rollout.Advantages(b.Worker, b.Discount)
-
-	c := b.Worker.Agent.Params[0].Vector.Creator()
-	ops := c.NumOps()
-
 	stateUpstream := make([]anyrnn.StateGrad, 3)
 	for t := len(advantages) - 1; t >= 0; t-- {
 		outReses := b.Rollout.Outs[t]
 		advantage := advantages[t]
+		criticMSE = ops.Add(criticMSE, ops.Pow(advantage, c.MakeNumeric(2)))
 
 		criticUpstream := c.MakeVector(1)
 		criticUpstream.AddScalar(ops.Mul(advantage, c.MakeNumeric(2)))
@@ -60,7 +61,9 @@ func (b *bptt) Run() anydiff.Grad {
 		}
 	}
 
-	return grad
+	criticMSE = ops.Div(criticMSE, c.MakeNumeric(float64(len(advantages))))
+
+	return
 }
 
 func (b *bptt) actorUpstream(params, sampled anyvec.Vector,

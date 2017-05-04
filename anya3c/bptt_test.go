@@ -1,6 +1,7 @@
 package anya3c
 
 import (
+	"math"
 	"testing"
 
 	"github.com/unixpickle/anydiff"
@@ -119,7 +120,12 @@ func TestBPTT(t *testing.T) {
 			Coeff:     0.5,
 		},
 	}
-	actualGrad := b.Run()
+	actualGrad, actualMSE := b.Run()
+
+	expectedMSE := anyvec.Sum(criticTerm.Output()).(float64) / -3
+	if math.Abs(expectedMSE-actualMSE.(float64)) > 1e-3 {
+		t.Errorf("expected MSE of %f but got %f", expectedMSE, actualMSE)
+	}
 
 	if len(actualGrad) != len(expectedGrad) {
 		t.Fatalf("expected %d gradients but got %d", len(expectedGrad),
