@@ -47,8 +47,7 @@ func (r *rollout) Advantages(w *worker, discount float64) []anyvec.Numeric {
 	followingReward := c.MakeNumeric(0)
 	if !w.EnvDone {
 		// Bootstrap from value function.
-		w.StepAgent()
-		followingReward = anyvec.Sum(w.AgentRes[2].Output())
+		followingReward = anyvec.Sum(w.PeekCritic())
 	}
 	discountNum := c.MakeNumeric(discount)
 

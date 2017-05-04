@@ -101,6 +101,15 @@ func (w *worker) StepEnv() (reward float64, action anyvec.Vector, err error) {
 	return
 }
 
+// PeekCritic computes the latest critic output without
+// saving the result.
+func (w *worker) PeekCritic() anyvec.Vector {
+	blocks := w.blocks()
+	baseOut := blocks[0].Step(w.AgentState[0], w.EnvObs)
+	criticOut := blocks[2].Step(w.AgentState[2], baseOut.Output())
+	return criticOut.Output()
+}
+
 // blocks returns the policy blocks in the order of
 // w.AgentRes and w.AgentState.
 func (w *worker) blocks() []anyrnn.Block {
