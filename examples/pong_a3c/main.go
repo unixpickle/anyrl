@@ -73,7 +73,7 @@ func main() {
 		MaxSteps: 20,
 		Regularizer: &anypg.EntropyReg{
 			Entropyer: anyrl.Softmax{},
-			Coeff:     0.01,
+			Coeff:     0.003,
 		},
 	}
 
@@ -108,21 +108,21 @@ func loadOrCreateAgent(creator anyvec.Creator) *anya3c.Agent {
 				// Fully-connected MLP.
 				anynet.NewFC(creator, PreprocessedSize, 64),
 				anynet.Tanh,
-				anynet.NewFC(creator, 64, 32),
+				anynet.NewFC(creator, 64, 64),
 				anynet.Tanh,
 			},
 		}
 		res.Actor = &anyrnn.LayerBlock{
 			Layer: anynet.Net{
 				// Zero initialization encourages random exploration.
-				anynet.NewFCZero(creator, 32, 6),
+				anynet.NewFCZero(creator, 64, 6),
 			},
 		}
 		res.Critic = &anyrnn.LayerBlock{
 			Layer: anynet.Net{
 				// Don't zero initialize; it messes up RMSProp when
 				// the first reward is finally seen.
-				anynet.NewFC(creator, 32, 1),
+				anynet.NewFC(creator, 64, 1),
 			},
 		}
 		return &res
