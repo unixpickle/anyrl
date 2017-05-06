@@ -1,6 +1,7 @@
 package anypg
 
 import (
+	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyseq"
@@ -20,22 +21,45 @@ type ActionJudger interface {
 
 // QJudger is an ActionJudger which judges the goodness of
 // an action by that action's sampled Q-value.
-type QJudger struct{}
+type QJudger struct {
+	// Discount is the reward discount factor.
+	//
+	// If 0, no discount is used.
+	Discount float64
+}
 
 // JudgeActions transforms the rewards so that each reward
 // is replaced with the sum of all the rewards from that
 // timestep to the end of the episode.
-func (q QJudger) JudgeActions(r *anyrl.RolloutSet) lazyseq.Tape {
-	sum := anyrl.TotalRewardsBatch(r.Rewards)
+func (q *QJudger) JudgeActions(r *anyrl.RolloutSet) lazyseq.Tape {
+	var batches []*anyseq.Batch
+	for batch := range r.Rewards.ReadTape(0, -1) {
+		batches = append(batches, batch)
+	}
+
+	if len(batches) == 0 {
+		return r.Rewards
+	}
+
+	var sum *anyseq.Batch
+	var reversedQs []*anyseq.Batch
+	for i := len(batches) - 1; i >= 0; i-- {
+		batch := batches[i]
+		if sum == nil {
+			sum = batch.Expand(batch.Present)
+		} else {
+			sum = sum.Expand(batch.Present)
+			if q.Discount != 0 {
+				sum.Packed.Scale(sum.Packed.Creator().MakeNumeric(q.Discount))
+			}
+			sum.Packed.Add(batch.Packed)
+		}
+		reversedQs = append(reversedQs, sum)
+	}
 
 	resTape, writer := lazyseq.ReferenceTape()
-
-	for batch := range r.Rewards.ReadTape(0, -1) {
-		// Create two separate copies of the sum to
-		// avoid modifying the batch we send.
-		writer <- sum.Reduce(batch.Present)
-		sum = sum.Reduce(batch.Present)
-		sum.Packed.Sub(batch.Packed)
+	for i := len(reversedQs) - 1; i >= 0; i-- {
+		writer <- reversedQs[i]
 	}
 
 	close(writer)

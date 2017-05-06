@@ -29,7 +29,7 @@ func TestQJudger(t *testing.T) {
 	}
 	close(writer)
 
-	tapeOut := QJudger{}.JudgeActions(&anyrl.RolloutSet{Rewards: tapeIn})
+	tapeOut := (&QJudger{}).JudgeActions(&anyrl.RolloutSet{Rewards: tapeIn})
 	expected := []*anyseq.Batch{
 		{
 			Present: []bool{true, false, true},
@@ -38,6 +38,43 @@ func TestQJudger(t *testing.T) {
 		{
 			Present: []bool{true, false, true},
 			Packed:  c.MakeVectorData([]float64{2.5, -1}),
+		},
+		{
+			Present: []bool{true, false, false},
+			Packed:  c.MakeVectorData([]float64{2}),
+		},
+	}
+	testTapeEquiv(t, tapeOut, expected)
+}
+
+func TestQJudgerDiscounted(t *testing.T) {
+	c := anyvec64.DefaultCreator{}
+
+	tapeIn, writer := lazyseq.ReferenceTape()
+	writer <- &anyseq.Batch{
+		Present: []bool{true, false, true},
+		Packed:  c.MakeVectorData([]float64{1, 0.5}),
+	}
+	writer <- &anyseq.Batch{
+		Present: []bool{true, false, true},
+		Packed:  c.MakeVectorData([]float64{0.5, -1}),
+	}
+	writer <- &anyseq.Batch{
+		Present: []bool{true, false, false},
+		Packed:  c.MakeVectorData([]float64{2}),
+	}
+	close(writer)
+
+	j := &QJudger{Discount: 0.5}
+	tapeOut := j.JudgeActions(&anyrl.RolloutSet{Rewards: tapeIn})
+	expected := []*anyseq.Batch{
+		{
+			Present: []bool{true, false, true},
+			Packed:  c.MakeVectorData([]float64{1.75, 0}),
+		},
+		{
+			Present: []bool{true, false, true},
+			Packed:  c.MakeVectorData([]float64{1.5, -1}),
 		},
 		{
 			Present: []bool{true, false, false},
