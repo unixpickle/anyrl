@@ -10,7 +10,7 @@ import (
 	"github.com/unixpickle/lazyseq"
 )
 
-func TestTRPO(t *testing.T) {
+func TestTRPOImprovement(t *testing.T) {
 	c := anyvec64.DefaultCreator{}
 	r := rolloutsForTest(c)
 

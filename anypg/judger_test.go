@@ -14,22 +14,14 @@ import (
 func TestQJudger(t *testing.T) {
 	c := anyvec64.DefaultCreator{}
 
-	tapeIn, writer := lazyseq.ReferenceTape()
-	writer <- &anyseq.Batch{
-		Present: []bool{true, false, true},
-		Packed:  c.MakeVectorData([]float64{1, 0.5}),
+	rewards := [][]float64{
+		{1, 0.5, 2},
+		{},
+		{0.5, -1},
 	}
-	writer <- &anyseq.Batch{
-		Present: []bool{true, false, true},
-		Packed:  c.MakeVectorData([]float64{0.5, -1}),
-	}
-	writer <- &anyseq.Batch{
-		Present: []bool{true, false, false},
-		Packed:  c.MakeVectorData([]float64{2}),
-	}
-	close(writer)
 
-	tapeOut := (&QJudger{}).JudgeActions(&anyrl.RolloutSet{Rewards: tapeIn})
+	rewardsOut := (&QJudger{}).JudgeActions(&anyrl.RolloutSet{Rewards: rewards})
+	tapeOut := rewardsOut.Tape(c)
 	expected := []*anyseq.Batch{
 		{
 			Present: []bool{true, false, true},
@@ -50,23 +42,15 @@ func TestQJudger(t *testing.T) {
 func TestQJudgerDiscounted(t *testing.T) {
 	c := anyvec64.DefaultCreator{}
 
-	tapeIn, writer := lazyseq.ReferenceTape()
-	writer <- &anyseq.Batch{
-		Present: []bool{true, false, true},
-		Packed:  c.MakeVectorData([]float64{1, 0.5}),
+	rewards := [][]float64{
+		{1, 0.5, 2},
+		{},
+		{0.5, -1},
 	}
-	writer <- &anyseq.Batch{
-		Present: []bool{true, false, true},
-		Packed:  c.MakeVectorData([]float64{0.5, -1}),
-	}
-	writer <- &anyseq.Batch{
-		Present: []bool{true, false, false},
-		Packed:  c.MakeVectorData([]float64{2}),
-	}
-	close(writer)
 
 	j := &QJudger{Discount: 0.5}
-	tapeOut := j.JudgeActions(&anyrl.RolloutSet{Rewards: tapeIn})
+	rewardsOut := j.JudgeActions(&anyrl.RolloutSet{Rewards: rewards})
+	tapeOut := rewardsOut.Tape(c)
 	expected := []*anyseq.Batch{
 		{
 			Present: []bool{true, false, true},
@@ -87,45 +71,33 @@ func TestQJudgerDiscounted(t *testing.T) {
 func TestTotalJudger(t *testing.T) {
 	c := anyvec64.DefaultCreator{}
 
-	tapeIn, writer := lazyseq.ReferenceTape()
-	writer <- &anyseq.Batch{
-		Present: []bool{true, false, true, true},
-		Packed:  c.MakeVectorData([]float64{1, 2, -1}),
+	rewards := [][]float64{
+		{1, 2, 3, 1},
+		{2, -1},
+		{-1, -1, -2},
 	}
-	writer <- &anyseq.Batch{
-		Present: []bool{true, false, true, true},
-		Packed:  c.MakeVectorData([]float64{2, -1, -1}),
-	}
-	writer <- &anyseq.Batch{
-		Present: []bool{true, false, false, true},
-		Packed:  c.MakeVectorData([]float64{3, -2}),
-	}
-	writer <- &anyseq.Batch{
-		Present: []bool{true, false, false, false},
-		Packed:  c.MakeVectorData([]float64{1}),
-	}
-	close(writer)
 
 	// Sums: 7 1 -4; mean=1.33333; std=4.4969
 	// Normalized:  1.260131  -0.074125  -1.186005
 
 	judger := &TotalJudger{Normalize: true}
-	tapeOut := judger.JudgeActions(&anyrl.RolloutSet{Rewards: tapeIn})
+	rewardsOut := judger.JudgeActions(&anyrl.RolloutSet{Rewards: rewards})
+	tapeOut := rewardsOut.Tape(c)
 	expected := []*anyseq.Batch{
 		{
-			Present: []bool{true, false, true, true},
+			Present: []bool{true, true, true},
 			Packed:  c.MakeVectorData([]float64{1.260131, -0.074125, -1.186005}),
 		},
 		{
-			Present: []bool{true, false, true, true},
+			Present: []bool{true, true, true},
 			Packed:  c.MakeVectorData([]float64{1.260131, -0.074125, -1.186005}),
 		},
 		{
-			Present: []bool{true, false, false, true},
+			Present: []bool{true, false, true},
 			Packed:  c.MakeVectorData([]float64{1.260131, -1.186005}),
 		},
 		{
-			Present: []bool{true, false, false, false},
+			Present: []bool{true, false, false},
 			Packed:  c.MakeVectorData([]float64{1.260131}),
 		},
 	}

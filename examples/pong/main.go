@@ -3,8 +3,10 @@ package main
 import (
 	"compress/flate"
 	"log"
+	"math"
 	"sync"
 
+	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anymisc"
 	"github.com/unixpickle/anynet/anyrnn"
@@ -26,7 +28,7 @@ const (
 )
 
 const (
-	RenderEnv = false
+	RenderEnv = true
 
 	NetworkSaveFile = "trained_policy"
 )
@@ -54,14 +56,14 @@ func main() {
 
 	// Create a neural network policy.
 	policy := loadOrCreateNetwork(creator)
-	actionSampler := anyrl.Softmax{}
+	actionSpace := anyrl.Softmax{}
 
 	// Setup Trust Region Policy Optimization for training.
 	trpo := &anypg.TRPO{
 		NaturalPG: anypg.NaturalPG{
 			Policy:      policy,
 			Params:      policy.Parameters(),
-			ActionSpace: actionSampler,
+			ActionSpace: actionSpace,
 
 			// Speed things up a bit.
 			Iters: 4,
@@ -71,6 +73,19 @@ func main() {
 				return lazyseq.Lazify(lazyseq.Unlazify(out))
 			},
 			ActionJudger: &anypg.QJudger{Discount: 0.99},
+		},
+	}
+
+	// Setup an RNNRoller for producing rollouts.
+	roller := &anyrl.RNNRoller{
+		Block:       policy,
+		ActionSpace: actionSpace,
+
+		// Compress the input frames as we store them.
+		// If we used a ReferenceTape for the input, the
+		// program would use way too much memory.
+		MakeInputTape: func() (lazyseq.Tape, chan<- *anyseq.Batch) {
+			return lazyseq.CompressedUint8Tape(flate.DefaultCompression)
 		},
 	}
 
@@ -85,10 +100,11 @@ func main() {
 			var rollouts []*anyrl.RolloutSet
 			var steps int
 			for steps < BatchSteps {
-				rollout := rollout(creator, policy, envs)
+				rollout, err := roller.Rollout(envs...)
+				must(err)
 				steps += rollout.NumSteps()
-				log.Printf("batch %d: steps=%d sub_mean=%v", batchIdx, steps,
-					rollout.MeanReward(creator))
+				log.Printf("batch %d: steps=%d sub_mean=%f", batchIdx, steps,
+					rollout.Rewards.Mean())
 				rollouts = append(rollouts, rollout)
 			}
 
@@ -96,10 +112,8 @@ func main() {
 			r := anyrl.PackRolloutSets(rollouts)
 
 			// Print the stats for the batch.
-			ops := creator.NumOps()
-			log.Printf("batch %d: mean=%v stddev=%v", batchIdx,
-				r.MeanReward(creator),
-				ops.Pow(r.RewardVariance(creator), creator.MakeNumeric(0.5)))
+			log.Printf("batch %d: mean=%f stddev=%f", batchIdx,
+				r.Rewards.Mean(), math.Sqrt(r.Rewards.Variance()))
 
 			// Train on the rollouts.
 			log.Println("Training on batch...")
@@ -140,26 +154,6 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 			},
 		}
 	}
-}
-
-func rollout(creator anyvec.Creator, agent anyrnn.Block, envs []anyrl.Env) *anyrl.RolloutSet {
-	// Compress the input frames as we store them.
-	// If we used a ReferenceTape for the input, the
-	// program would use way too much memory.
-	inputs, inputCh := lazyseq.CompressedUint8Tape(flate.DefaultCompression)
-
-	rewards, rewardsCh := lazyseq.ReferenceTape()
-	sampled, sampledCh := lazyseq.ReferenceTape()
-
-	err := anyrl.RolloutRNNChans(creator, agent, anyrl.Softmax{},
-		inputCh, rewardsCh, sampledCh, envs...)
-	must(err)
-
-	close(inputCh)
-	close(rewardsCh)
-	close(sampledCh)
-
-	return &anyrl.RolloutSet{Inputs: inputs, Rewards: rewards, SampledOuts: sampled}
 }
 
 func must(err error) {

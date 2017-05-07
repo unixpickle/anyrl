@@ -18,19 +18,20 @@ type FracReducer struct {
 // The number of rollouts is always rounded up to avoid
 // selecting 0 rollouts.
 func (f *FracReducer) Reduce(r *RolloutSet) *RolloutSet {
-	first, ok := <-r.Rewards.ReadTape(0, 1)
-	if !ok {
-		return r
-	}
-	num := int(math.Ceil(f.Frac * float64(len(first.Present))))
-	indices := rand.Perm(len(first.Present))[:num]
-	present := make([]bool, len(first.Present))
+	numSeqs := len(r.Rewards)
+	numSelected := int(math.Ceil(f.Frac * float64(numSeqs)))
+	indices := rand.Perm(numSeqs)[:numSelected]
+	present := make([]bool, numSeqs)
 	for _, j := range indices {
 		present[j] = true
 	}
-	return &RolloutSet{
-		Inputs:      lazyseq.ReduceTape(r.Inputs, present),
-		Rewards:     lazyseq.ReduceTape(r.Rewards, present),
-		SampledOuts: lazyseq.ReduceTape(r.SampledOuts, present),
+	res := &RolloutSet{
+		Inputs:  lazyseq.ReduceTape(r.Inputs, present),
+		Actions: lazyseq.ReduceTape(r.Actions, present),
+		Rewards: r.Rewards.Reduce(present),
 	}
+	if r.AgentOuts != nil {
+		res.AgentOuts = lazyseq.ReduceTape(r.AgentOuts, present)
+	}
+	return res
 }

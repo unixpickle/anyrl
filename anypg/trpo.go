@@ -89,10 +89,10 @@ func (t *TRPO) acceptable(r *anyrl.RolloutSet, grad anydiff.Grad,
 	outs lazyseq.Tape) bool {
 	c := creatorFromGrad(grad)
 	inSeq := lazyseq.TapeRereader(c, r.Inputs)
-	rewardSeq := lazyseq.TapeRereader(c, t.actionJudger().JudgeActions(r))
+	rewardSeq := lazyseq.TapeRereader(c, t.actionJudger().JudgeActions(r).Tape(c))
 	oldOutSeq := lazyseq.TapeRereader(c, outs)
 	newOutSeq := t.apply(inSeq, t.steppedPolicy(grad))
-	sampledOut := lazyseq.TapeRereader(c, r.SampledOuts)
+	sampledOut := lazyseq.TapeRereader(c, r.Actions)
 
 	// At each timestep, compute a pair <improvement, kl divergence>.
 	mappedOut := lazyseq.MapN(func(n int, v ...anydiff.Res) anydiff.Res {
@@ -150,6 +150,26 @@ func (n *NaturalPG) storePolicyOutputs(c anyvec.Creator,
 	return tape, out
 }
 
+func (t *TRPO) steppedPolicy(step anydiff.Grad) anyrnn.Block {
+	copied, err := serializer.Copy(t.Policy)
+	if err != nil {
+		panic(err)
+	}
+	newParams := anynet.AllParameters(copied)
+	oldParams := anynet.AllParameters(t.Policy)
+	newGrad := anydiff.Grad{}
+	for i, old := range oldParams {
+		if gradVal, ok := step[old]; ok {
+			newGrad[newParams[i]] = gradVal
+		}
+	}
+	if len(newGrad) != len(step) {
+		panic("not all parameters are visible to anynet.AllParameters")
+	}
+	newGrad.AddToVars()
+	return copied.(anyrnn.Block)
+}
+
 func (t *TRPO) targetKL() float64 {
 	if t.TargetKL == 0 {
 		return DefaultTargetKL
@@ -172,26 +192,6 @@ func (t *TRPO) maxLineSearch() int {
 	} else {
 		return t.MaxLineSearch
 	}
-}
-
-func (t *TRPO) steppedPolicy(step anydiff.Grad) anyrnn.Block {
-	copied, err := serializer.Copy(t.Policy)
-	if err != nil {
-		panic(err)
-	}
-	newParams := anynet.AllParameters(copied)
-	oldParams := anynet.AllParameters(t.Policy)
-	newGrad := anydiff.Grad{}
-	for i, old := range oldParams {
-		if gradVal, ok := step[old]; ok {
-			newGrad[newParams[i]] = gradVal
-		}
-	}
-	if len(newGrad) != len(step) {
-		panic("not all parameters are visible to anynet.AllParameters")
-	}
-	newGrad.AddToVars()
-	return copied.(anyrnn.Block)
 }
 
 func (t *TRPO) actionJudger() ActionJudger {

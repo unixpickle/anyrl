@@ -2,6 +2,7 @@ package anypg
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/unixpickle/anydiff"
@@ -191,25 +192,21 @@ func BenchmarkFisher(b *testing.B) {
 
 func rolloutsForTest(c anyvec.Creator) *anyrl.RolloutSet {
 	inputs, inputWriter := lazyseq.ReferenceTape()
-	rewards, rewardWriter := lazyseq.ReferenceTape()
-	sampledOuts, sampledOutsWriter := lazyseq.ReferenceTape()
+	actions, actionsWriter := lazyseq.ReferenceTape()
+	rewards := make(anyrl.Rewards, 3)
 	for i := 0; i < 3; i++ {
 		vec := c.MakeVector(6)
 		anyvec.Rand(vec, anyvec.Normal, nil)
-		rew := c.MakeVector(2)
-		anyvec.Rand(rew, anyvec.Uniform, nil)
 		inputWriter <- &anyseq.Batch{
 			Present: []bool{true, false, true},
 			Packed:  vec,
 		}
-		rewardWriter <- &anyseq.Batch{
-			Present: []bool{true, false, true},
-			Packed:  rew,
-		}
+		rewards[0] = append(rewards[0], rand.Float64())
+		rewards[2] = append(rewards[2], rand.Float64())
 		sampled := make([]float64, 4)
 		sampled[i%2] = 1
 		sampled[(i+1)%2+2] = 1
-		sampledOutsWriter <- &anyseq.Batch{
+		actionsWriter <- &anyseq.Batch{
 			Present: []bool{true, false, true},
 			Packed:  c.MakeVectorData(c.MakeNumericList(sampled)),
 		}
@@ -217,31 +214,25 @@ func rolloutsForTest(c anyvec.Creator) *anyrl.RolloutSet {
 	for i := 0; i < 8; i++ {
 		vec := c.MakeVector(3)
 		anyvec.Rand(vec, anyvec.Normal, nil)
-		rew := c.MakeVector(1)
-		anyvec.Rand(rew, anyvec.Uniform, nil)
 		inputWriter <- &anyseq.Batch{
 			Present: []bool{false, false, true},
 			Packed:  vec,
 		}
-		rewardWriter <- &anyseq.Batch{
-			Present: []bool{false, false, true},
-			Packed:  rew,
-		}
+		rewards[2] = append(rewards[2], rand.Float64())
 		sampled := make([]float64, 2)
 		sampled[i%2] = 1
-		sampledOutsWriter <- &anyseq.Batch{
+		actionsWriter <- &anyseq.Batch{
 			Present: []bool{false, false, true},
 			Packed:  c.MakeVectorData(c.MakeNumericList(sampled)),
 		}
 	}
 	close(inputWriter)
-	close(rewardWriter)
-	close(sampledOutsWriter)
+	close(actionsWriter)
 
 	rollouts := &anyrl.RolloutSet{
-		Inputs:      inputs,
-		Rewards:     rewards,
-		SampledOuts: sampledOuts,
+		Inputs:  inputs,
+		Actions: actions,
+		Rewards: rewards,
 	}
 
 	return rollouts

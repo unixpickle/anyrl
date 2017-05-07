@@ -40,8 +40,8 @@ func (p *PG) Run(r *anyrl.RolloutSet) anydiff.Grad {
 
 	policyOut := p.Policy(lazyseq.TapeRereader(c, r.Inputs))
 
-	selectedOuts := lazyseq.TapeRereader(c, r.SampledOuts)
-	rewards := lazyseq.TapeRereader(c, p.actionJudger().JudgeActions(r))
+	selectedOuts := lazyseq.TapeRereader(c, r.Actions)
+	rewards := lazyseq.TapeRereader(c, p.actionJudger().JudgeActions(r).Tape(c))
 
 	scores := lazyseq.MapN(func(n int, v ...anydiff.Res) anydiff.Res {
 		actionParams := v[0]

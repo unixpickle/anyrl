@@ -1,78 +1,97 @@
 package anyrl
 
 import (
-	"math"
-
 	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyseq"
 )
 
-// TotalRewards sums the rewards for each sequence of
-// rewards.
-func TotalRewards(c anyvec.Creator, rewards lazyseq.Tape) anyvec.Vector {
-	sum := TotalRewardsBatch(rewards)
-	if sum == nil {
-		return c.MakeVector(0)
+// Rewards is a set of reward sequences.
+// Each sequence can be thought of as a different episode.
+type Rewards [][]float64
+
+// PackRewards concatenates Rewards objects.
+func PackRewards(r []Rewards) Rewards {
+	var res Rewards
+	for _, x := range r {
+		res = append(res, x...)
 	}
-	return sum.Packed
+	return res
 }
 
-// TotalRewardsBatch is like TotalRewards except that it
-// preserves the sequence present map.
-//
-// This returns nil if there are no timesteps.
-func TotalRewardsBatch(rewards lazyseq.Tape) *anyseq.Batch {
-	var sum *anyseq.Batch
-	for batch := range rewards.ReadTape(0, -1) {
-		if sum == nil {
-			sum = &anyseq.Batch{
-				Present: batch.Present,
-				Packed:  batch.Packed.Copy(),
-			}
-		} else {
-			sum.Packed.Add(batch.Expand(sum.Present).Packed)
-		}
-	}
-	return sum
-}
-
-// MeanReward sums the rewards for each sequence, then
-// computes the mean of the sums.
-func MeanReward(c anyvec.Creator, rewards lazyseq.Tape) anyvec.Numeric {
-	total := TotalRewards(c, rewards)
-	return sampleMean(total)
-}
-
-// RewardVariance computes the variance of total rewards.
-func RewardVariance(c anyvec.Creator, rewards lazyseq.Tape) anyvec.Numeric {
-	total := TotalRewards(c, rewards)
-	negMean := c.NumOps().Mul(sampleMean(total), c.MakeNumeric(-1))
-	total.AddScalar(negMean)
-
-	// Second moment of centered samples is the variance.
-	anyvec.Pow(total, c.MakeNumeric(2))
-	return sampleMean(total)
-}
-
-// DiscountedRewards computes discounted rewards.
-func DiscountedRewards(rewards lazyseq.Tape, factor float64) lazyseq.Tape {
+// Tape converts the reward sequences to a lazyseq.Tape.
+func (r Rewards) Tape(c anyvec.Creator) lazyseq.Tape {
 	res, writer := lazyseq.ReferenceTape()
 
-	var i float64
-	for in := range rewards.ReadTape(0, -1) {
-		discount := math.Pow(factor, i)
-		scaled := in.Reduce(in.Present)
-		scaled.Packed.Scale(scaled.Packed.Creator().MakeNumeric(discount))
-		writer <- scaled
-		i++
+	var t int
+	for {
+		present := make([]bool, len(r))
+		var packed []float64
+		for seqIdx, seq := range r {
+			if t < len(seq) {
+				present[seqIdx] = true
+				packed = append(packed, seq[t])
+			}
+		}
+		if len(packed) == 0 {
+			break
+		}
+		writer <- &anyseq.Batch{
+			Packed:  c.MakeVectorData(c.MakeNumericList(packed)),
+			Present: present,
+		}
+		t++
 	}
 
 	close(writer)
 	return res
 }
 
-func sampleMean(vec anyvec.Vector) anyvec.Numeric {
-	c := vec.Creator()
-	return c.NumOps().Div(anyvec.Sum(vec), c.MakeNumeric(float64(vec.Len())))
+// Totals returns the reward sum for each sequence.
+func (r Rewards) Totals() []float64 {
+	sums := make([]float64, len(r))
+	for seqIdx, seq := range r {
+		for _, x := range seq {
+			sums[seqIdx] += x
+		}
+	}
+	return sums
+}
+
+// Mean computes the mean of the reward totals.
+func (r Rewards) Mean() float64 {
+	var sum float64
+	for _, x := range r.Totals() {
+		sum += x
+	}
+	return sum / float64(len(r))
+}
+
+// Variance computes the variance of the reward totals.
+func (r Rewards) Variance() float64 {
+	var sum float64
+	var sqSum float64
+	for _, x := range r.Totals() {
+		sum += x
+		sqSum += x * x
+	}
+
+	mean := sum / float64(len(r))
+	secondMoment := sqSum / float64(len(r))
+
+	return secondMoment - mean*mean
+}
+
+// Reduce produces a new Rewards object where certain
+// sequences have been removed (set to nil).
+//
+// If pres[i] is false, then the i-th sequence is removed.
+func (r Rewards) Reduce(pres []bool) Rewards {
+	res := make(Rewards, len(r))
+	for i, p := range pres {
+		if p {
+			res[i] = r[i]
+		}
+	}
+	return res
 }

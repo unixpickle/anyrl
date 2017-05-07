@@ -1,22 +1,20 @@
 package anypg
 
 import (
-	"github.com/unixpickle/anydiff/anyseq"
+	"math"
+
 	"github.com/unixpickle/anyrl"
-	"github.com/unixpickle/anyvec"
-	"github.com/unixpickle/lazyseq"
 )
 
 // An ActionJudger generates a signal indicating how
 // "good" actions were in a set of rollouts.
-// An ActionJudger is used to decide which
-// actions to encourage and which ones to discourage
-// in policy gradient methods.
+// An ActionJudger is used to decide which actions
+// to encourage and which ones to discourage.
 //
-// The JudgeActions method produces a tape of the same
-// dimensions as the tape of rewards.
+// The JudgeActions method produces an anyrl.Rewards of
+// the same dimensions as the original reward signal.
 type ActionJudger interface {
-	JudgeActions(rollouts *anyrl.RolloutSet) lazyseq.Tape
+	JudgeActions(rollouts *anyrl.RolloutSet) anyrl.Rewards
 }
 
 // QJudger is an ActionJudger which judges the goodness of
@@ -31,39 +29,21 @@ type QJudger struct {
 // JudgeActions transforms the rewards so that each reward
 // is replaced with the sum of all the rewards from that
 // timestep to the end of the episode.
-func (q *QJudger) JudgeActions(r *anyrl.RolloutSet) lazyseq.Tape {
-	var batches []*anyseq.Batch
-	for batch := range r.Rewards.ReadTape(0, -1) {
-		batches = append(batches, batch)
-	}
-
-	if len(batches) == 0 {
-		return r.Rewards
-	}
-
-	var sum *anyseq.Batch
-	var reversedQs []*anyseq.Batch
-	for i := len(batches) - 1; i >= 0; i-- {
-		batch := batches[i]
-		if sum == nil {
-			sum = batch.Expand(batch.Present)
-		} else {
-			sum = sum.Expand(batch.Present)
+func (q *QJudger) JudgeActions(r *anyrl.RolloutSet) anyrl.Rewards {
+	var res anyrl.Rewards
+	for _, seq := range r.Rewards {
+		newSeq := make([]float64, len(seq))
+		var sum float64
+		for t := len(seq) - 1; t >= 0; t-- {
 			if q.Discount != 0 {
-				sum.Packed.Scale(sum.Packed.Creator().MakeNumeric(q.Discount))
+				sum *= q.Discount
 			}
-			sum.Packed.Add(batch.Packed)
+			sum += seq[t]
+			newSeq[t] = sum
 		}
-		reversedQs = append(reversedQs, sum)
+		res = append(res, newSeq)
 	}
-
-	resTape, writer := lazyseq.ReferenceTape()
-	for i := len(reversedQs) - 1; i >= 0; i-- {
-		writer <- reversedQs[i]
-	}
-
-	close(writer)
-	return resTape
+	return res
 }
 
 // TotalJudger is an ActionJudger which judges the
@@ -86,55 +66,58 @@ type TotalJudger struct {
 
 // JudgeActions repeats the cumulative rewards at every
 // timestep in a tape.
-func (t *TotalJudger) JudgeActions(r *anyrl.RolloutSet) lazyseq.Tape {
-	sum := anyrl.TotalRewardsBatch(r.Rewards)
-	if sum == nil {
-		return r.Rewards
-	}
+func (t *TotalJudger) JudgeActions(r *anyrl.RolloutSet) anyrl.Rewards {
+	totals := r.Rewards.Totals()
 
 	if t.Normalize {
-		t.normalize(sum.Packed)
+		t.normalize(totals)
 	}
 
-	resTape, writer := lazyseq.ReferenceTape()
-	for batch := range r.Rewards.ReadTape(0, -1) {
-		writer <- sum.Reduce(batch.Present)
+	var res anyrl.Rewards
+	for seqIdx, seq := range r.Rewards {
+		var newSeq []float64
+		for _ = range seq {
+			newSeq = append(newSeq, totals[seqIdx])
+		}
+		res = append(res, newSeq)
 	}
-	close(writer)
-	return resTape
+
+	return res
 }
 
-func (t *TotalJudger) normalize(vec anyvec.Vector) {
-	c := vec.Creator()
+func (t *TotalJudger) normalize(rewards []float64) {
+	var heterogeneous bool
+	var sum float64
 
-	// Due to rounding errors, homogeneous rewards (i.e.
-	// all the same reward) sometimes yield vectors of
-	// the form <-1, -1, -1, ...>.
-	// By subtracting the maximum value, we can ensure
-	// zeroes for homogeneous vectors.
-	max := anyvec.Max(vec)
-	vec.AddScalar(c.NumOps().Mul(max, c.MakeNumeric(-1)))
+	for _, x := range rewards {
+		sum += x
+		if x != rewards[0] {
+			heterogeneous = true
+		}
+	}
+	if !heterogeneous {
+		for i := range rewards {
+			rewards[i] = 0
+		}
+		return
+	}
 
-	// Set mean=0 so we can use second moment as variance.
-	meanVals := vec.Copy()
-	meanVals.Scale(c.MakeNumeric(-1 / float64(vec.Len())))
-	vec.AddScalar(anyvec.Sum(meanVals))
+	mean := sum / float64(len(rewards))
 
-	stdVals := vec.Copy()
+	var sqSum float64
+	for i := range rewards {
+		rewards[i] -= mean
+		sqSum += rewards[i] * rewards[i]
+	}
+	variance := sqSum / float64(len(rewards))
 
 	epsilon := t.Epsilon
 	if epsilon == 0 {
 		epsilon = 1e-8
 	}
-	stdVals.AddScalar(c.MakeNumeric(epsilon))
 
-	anyvec.Pow(stdVals, c.MakeNumeric(2))
-	stdVals.Scale(c.MakeNumeric(1 / float64(vec.Len())))
-	secondMoment := anyvec.Sum(stdVals)
-	invStdVec := c.MakeVector(1)
-	invStdVec.AddScalar(secondMoment)
-	anyvec.Pow(invStdVec, c.MakeNumeric(-0.5))
-	invStd := anyvec.Sum(invStdVec)
-
-	vec.Scale(invStd)
+	normalizer := 1 / (math.Sqrt(variance) + epsilon)
+	for i := range rewards {
+		rewards[i] *= normalizer
+	}
 }

@@ -64,11 +64,14 @@ func main() {
 		},
 	}
 
+	// Setup an RNNRoller to collect episode rollouts.
+	roller := &anyrl.RNNRoller{Block: policy, ActionSpace: actionSampler}
+
 	for batchIdx := 0; batchIdx < NumBatches; batchIdx++ {
 		// Gather episode rollouts.
 		var rollouts []*anyrl.RolloutSet
 		for i := 0; i < RolloutsPerBatch; i++ {
-			rollout, err := anyrl.RolloutRNN(creator, policy, actionSampler, env)
+			rollout, err := roller.Rollout(env)
 			must(err)
 			rollouts = append(rollouts, rollout)
 		}
@@ -77,7 +80,7 @@ func main() {
 		r := anyrl.PackRolloutSets(rollouts)
 
 		// Print the rewards.
-		log.Printf("batch %d: mean_reward=%v", batchIdx, r.MeanReward(creator))
+		log.Printf("batch %d: mean_reward=%f", batchIdx, r.Rewards.Mean())
 
 		// Train on the rollouts.
 		grad := trpo.Run(r)
