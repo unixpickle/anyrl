@@ -103,8 +103,8 @@ func main() {
 
 			// Train on the rollouts.
 			log.Println("Training on batch...")
-			trainLock.Lock()
 			grad := trpo.Run(r)
+			trainLock.Lock()
 			grad.AddToVars()
 			trainLock.Unlock()
 		}
@@ -114,7 +114,7 @@ func main() {
 	<-rip.NewRIP().Chan()
 
 	// Avoid the race condition where we save during
-	// training.
+	// parameter updates.
 	trainLock.Lock()
 	must(serializer.SaveAny(NetworkSaveFile, policy))
 }

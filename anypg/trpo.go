@@ -3,9 +3,12 @@ package anypg
 import (
 	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anydiff/anyseq"
+	"github.com/unixpickle/anynet"
+	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyseq"
+	"github.com/unixpickle/serializer"
 )
 
 // Default settings for TRPO.
@@ -48,10 +51,6 @@ type TRPO struct {
 
 // Run computes a step to improve the agent's performance
 // on the rollouts.
-//
-// This may temporarily modify the policy.
-// Thus, it is not safe to use Run() while using the
-// policy on a different Goroutine.
 func (t *TRPO) Run(r *anyrl.RolloutSet) anydiff.Grad {
 	grad := t.NaturalPG.Run(r)
 	if len(grad) == 0 || allZeros(grad) {
@@ -88,15 +87,11 @@ func (t *TRPO) stepSize(r *anyrl.RolloutSet, grad anydiff.Grad,
 
 func (t *TRPO) acceptable(r *anyrl.RolloutSet, grad anydiff.Grad,
 	outs lazyseq.Tape) bool {
-	backup := t.backupParams()
-	grad.AddToVars()
-	defer t.restoreParams(backup)
-
 	c := creatorFromGrad(grad)
 	inSeq := lazyseq.TapeRereader(c, r.Inputs)
 	rewardSeq := lazyseq.TapeRereader(c, t.actionJudger().JudgeActions(r))
 	oldOutSeq := lazyseq.TapeRereader(c, outs)
-	newOutSeq := t.apply(inSeq, t.Policy)
+	newOutSeq := t.apply(inSeq, t.steppedPolicy(grad))
 	sampledOut := lazyseq.TapeRereader(c, r.SampledOuts)
 
 	// At each timestep, compute a pair <improvement, kl divergence>.
@@ -179,18 +174,24 @@ func (t *TRPO) maxLineSearch() int {
 	}
 }
 
-func (t *TRPO) backupParams() []anyvec.Vector {
-	var res []anyvec.Vector
-	for _, p := range t.Params {
-		res = append(res, p.Vector.Copy())
+func (t *TRPO) steppedPolicy(step anydiff.Grad) anyrnn.Block {
+	copied, err := serializer.Copy(t.Policy)
+	if err != nil {
+		panic(err)
 	}
-	return res
-}
-
-func (t *TRPO) restoreParams(backup []anyvec.Vector) {
-	for i, x := range backup {
-		t.Params[i].Vector.Set(x)
+	newParams := anynet.AllParameters(copied)
+	oldParams := anynet.AllParameters(t.Policy)
+	newGrad := anydiff.Grad{}
+	for i, old := range oldParams {
+		if gradVal, ok := step[old]; ok {
+			newGrad[newParams[i]] = gradVal
+		}
 	}
+	if len(newGrad) != len(step) {
+		panic("not all parameters are visible to anynet.AllParameters")
+	}
+	newGrad.AddToVars()
+	return copied.(anyrnn.Block)
 }
 
 func (t *TRPO) actionJudger() ActionJudger {
