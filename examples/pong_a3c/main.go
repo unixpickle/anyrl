@@ -106,9 +106,9 @@ func loadOrCreateAgent(creator anyvec.Creator) *anya3c.Agent {
 				anynet.NewAffine(creator, 8, 0),
 
 				// Fully-connected MLP.
-				anynet.NewFC(creator, PreprocessedSize, 64),
+				anynet.NewFC(creator, PreprocessedSize, 96),
 				anynet.Tanh,
-				anynet.NewFC(creator, 64, 64),
+				anynet.NewFC(creator, 96, 64),
 				anynet.Tanh,
 			},
 		}
