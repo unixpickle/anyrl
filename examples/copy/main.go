@@ -15,7 +15,7 @@ import (
 
 const (
 	Host      = "localhost:5001"
-	BatchSize = 50
+	BatchSize = 20
 
 	// Set to true if you want to watch the AI learn.
 	// Makes everything very slow.
