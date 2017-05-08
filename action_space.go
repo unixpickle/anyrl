@@ -180,9 +180,11 @@ func (b *Bernoulli) LogProb(params anydiff.Res, output anyvec.Vector,
 func (b *Bernoulli) KL(params1, params2 anydiff.Res, batchSize int) anydiff.Res {
 	offOn1 := b.offOnProbs(params1)
 	offOn2 := b.offOnProbs(params2)
-	diff := anydiff.Sub(offOn1, offOn2)
-	probs1 := anydiff.Exp(offOn1)
-	return batchedDot(probs1, diff, batchSize)
+	return anydiff.Pool(offOn1, func(offOn1 anydiff.Res) anydiff.Res {
+		diff := anydiff.Sub(offOn1, offOn2)
+		probs1 := anydiff.Exp(offOn1)
+		return batchedDot(probs1, diff, batchSize)
+	})
 }
 
 // Entropy computes the information entropy of Bernoulli
