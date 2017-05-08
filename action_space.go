@@ -207,6 +207,111 @@ func (b *Bernoulli) offOnProbs(params anydiff.Res) anydiff.Res {
 	})
 }
 
+// Tuple is a tuple of action spaces which itself serves
+// as an action space.
+//
+// Each child action space has fixed-length parameter
+// vectors, the sizes of which are stored in ParamSizes.
+// Also, samples from each child action space must be of
+// a fixed size, which is stored in SampleSizes.
+//
+// Parameter vectors for a tuple are of the form
+// <a1, ..., am, b1, ..., bn, ...>, where
+// <a1, ..., am> is the parameter vector for the first
+// subspace, <b1, ..., bn> for the second, etc.
+//
+// A Tuple must contain at least one space.
+// Empty tuples are not supported.
+type Tuple struct {
+	Spaces      []interface{}
+	ParamSizes  []int
+	SampleSizes []int
+}
+
+// Sample samples from the tuple elements and returns a
+// packed tuple of results.
+//
+// This panics if a sub-space is not a Sampler.
+func (t *Tuple) Sample(params anyvec.Vector, batch int) anyvec.Vector {
+	unpacked := unpackTuples(anydiff.NewConst(params), t.ParamSizes, batch)
+	var sampled []anyvec.Vector
+	for i, subParams := range unpacked {
+		sampler := t.Spaces[i].(Sampler)
+		sampled = append(sampled, sampler.Sample(subParams.Output(), batch))
+	}
+	return packTuples(sampled, batch)
+}
+
+// LogProb computes the joint probability of the sampled
+// output.
+//
+// This panics if a sub-space is not a LogProber.
+func (t *Tuple) LogProb(params anydiff.Res, output anyvec.Vector,
+	batch int) anydiff.Res {
+	return anydiff.Pool(params, func(params anydiff.Res) anydiff.Res {
+		unpackedParams := unpackTuples(params, t.ParamSizes, batch)
+		unpackedSamples := unpackTuples(anydiff.NewConst(output), t.SampleSizes, batch)
+		var totalProbs anydiff.Res
+		for i, samples := range unpackedSamples {
+			params := unpackedParams[i]
+			logProber := t.Spaces[i].(LogProber)
+			logProb := logProber.LogProb(params, samples.Output(), batch)
+			if totalProbs == nil {
+				totalProbs = logProb
+			} else {
+				totalProbs = anydiff.Add(totalProbs, logProb)
+			}
+		}
+		return totalProbs
+	})
+}
+
+// KL computes the KL divergences between two batches of
+// distributions.
+//
+// This panics if a sub-space is not a KLer.
+func (t *Tuple) KL(params1, params2 anydiff.Res, batch int) anydiff.Res {
+	return anydiff.Pool(params1, func(params1 anydiff.Res) anydiff.Res {
+		return anydiff.Pool(params2, func(r anydiff.Res) anydiff.Res {
+			unpacked1 := unpackTuples(params1, t.ParamSizes, batch)
+			unpacked2 := unpackTuples(params2, t.ParamSizes, batch)
+			var totalKL anydiff.Res
+			for i, p1 := range unpacked1 {
+				p2 := unpacked2[i]
+				kler := t.Spaces[i].(KLer)
+				kl := kler.KL(p1, p2, batch)
+				if totalKL == nil {
+					totalKL = kl
+				} else {
+					totalKL = anydiff.Add(totalKL, kl)
+				}
+			}
+			return totalKL
+		})
+	})
+}
+
+// Entropy computes the entropy for each parameter tuple
+// in the batch.
+//
+// This panics if a sub-space is not an Entropyer.
+func (t *Tuple) Entropy(params anydiff.Res, batch int) anydiff.Res {
+	return anydiff.Pool(params, func(params anydiff.Res) anydiff.Res {
+		unpacked := unpackTuples(params, t.ParamSizes, batch)
+		var totalEntropy anydiff.Res
+		for i, subParams := range unpacked {
+			entropyer := t.Spaces[i].(Entropyer)
+			ent := entropyer.Entropy(subParams, batch)
+			if totalEntropy == nil {
+				totalEntropy = ent
+			} else {
+				totalEntropy = anydiff.Add(totalEntropy, ent)
+			}
+		}
+		return totalEntropy
+	})
+}
+
 func batchedDot(vecs1, vecs2 anydiff.Res, batchSize int) anydiff.Res {
 	products := anydiff.Mul(vecs1, vecs2)
 	return anydiff.SumCols(&anydiff.Matrix{
@@ -216,6 +321,8 @@ func batchedDot(vecs1, vecs2 anydiff.Res, batchSize int) anydiff.Res {
 	})
 }
 
+// sampleProbabilities samples a one-hot vector from a
+// list of index probabilities.
 func sampleProbabilities(p anyvec.Vector) anyvec.Vector {
 	randNum := rand.Float64()
 	idx := p.Len() - 1
@@ -272,4 +379,65 @@ func sideBySide(v1, v2 anydiff.Res) anydiff.Res {
 		Rows: 2,
 		Cols: v1.Output().Len(),
 	}).Data
+}
+
+// unpackTuple sseparates vectors in a batch of packed
+// vector tuples.
+//
+// You should pool params before calling this.
+func unpackTuples(params anydiff.Res, vecSizes []int, batch int) []anydiff.Res {
+	totalSize := 0
+	for _, s := range vecSizes {
+		totalSize += s
+	}
+
+	if params.Output().Len() != totalSize*batch {
+		panic(fmt.Sprintf("param size should be %d but got %d", totalSize*batch,
+			params.Output().Len()))
+	}
+
+	unjoined := make([][]anydiff.Res, len(vecSizes))
+	var offset int
+	for i := 0; i < batch; i++ {
+		for spaceIdx, size := range vecSizes {
+			subVec := anydiff.Slice(params, offset, offset+size)
+			offset += size
+			unjoined[spaceIdx] = append(unjoined[spaceIdx], subVec)
+		}
+	}
+
+	joined := make([]anydiff.Res, len(vecSizes))
+	for i, list := range unjoined {
+		if len(list) == 0 {
+			joined[i] = anydiff.NewConst(params.Output().Creator().MakeVector(0))
+		} else {
+			joined[i] = anydiff.Concat(list...)
+		}
+	}
+
+	return joined
+}
+
+// packTuples does the inverse of unpackTuples.
+func packTuples(eachPacked []anyvec.Vector, batch int) anyvec.Vector {
+	if batch == 0 {
+		return eachPacked[0].Creator().MakeVector(0)
+	}
+	var eachSplit [][]anyvec.Vector
+	for _, packed := range eachPacked {
+		chunkSize := packed.Len() / batch
+		var split []anyvec.Vector
+		for i := 0; i < batch; i++ {
+			s := packed.Slice(i*chunkSize, (i+1)*chunkSize)
+			split = append(split, s)
+		}
+		eachSplit = append(eachSplit, split)
+	}
+	var unjoined []anyvec.Vector
+	for i := 0; i < batch; i++ {
+		for _, split := range eachSplit {
+			unjoined = append(unjoined, split[i])
+		}
+	}
+	return eachPacked[0].Creator().Concat(unjoined...)
 }
