@@ -9,6 +9,8 @@ import (
 	gym "github.com/unixpickle/gym-socket-api/binding-go"
 )
 
+var errSpaceLength = errors.New("space vector has incorrect length")
+
 // Env is an instance of an RL environment.
 type Env interface {
 	Reset() (observation anyvec.Vector, err error)
@@ -74,7 +76,10 @@ func (g *gymEnv) Reset() (obsVec anyvec.Vector, err error) {
 func (g *gymEnv) Step(action anyvec.Vector) (obsVec anyvec.Vector, reward float64,
 	done bool, err error) {
 	defer essentials.AddCtxTo("step gym Env", &err)
-	gymAction := g.actConv.ToGym(action)
+	gymAction, err := g.actConv.ToGym(action)
+	if err != nil {
+		return
+	}
 	var obs gym.Obs
 	obs, reward, done, _, err = g.env.Step(gymAction)
 	if err != nil {
@@ -90,16 +95,31 @@ func (g *gymEnv) Step(action anyvec.Vector) (obsVec anyvec.Vector, reward float6
 }
 
 type gymSpaceConverter interface {
-	ToGym(in anyvec.Vector) interface{}
+	VecLen() int
+	ToGym(in anyvec.Vector) (interface{}, error)
 	FromGym(in gym.Obs) (anyvec.Vector, error)
 }
 
 func converterForSpace(c anyvec.Creator, s *gym.Space) (gymSpaceConverter, error) {
 	switch s.Type {
 	case "Box":
-		return &boxSpaceConverter{Creator: c}, nil
+		vecLen := 1
+		for _, x := range s.Shape {
+			vecLen *= x
+		}
+		return &boxSpaceConverter{Creator: c, Len: vecLen}, nil
 	case "Discrete":
 		return &discreteSpaceConverter{Creator: c, N: s.N}, nil
+	case "Tuple":
+		var subConvs []gymSpaceConverter
+		for _, subSpace := range s.Subspaces {
+			subConv, err := converterForSpace(c, subSpace)
+			if err != nil {
+				return nil, err
+			}
+			subConvs = append(subConvs, subConv)
+		}
+		return &tupleSpaceConverter{Creator: c, Spaces: subConvs}, nil
 	default:
 		return nil, errors.New("unsupported space: " + s.Type)
 	}
@@ -107,20 +127,28 @@ func converterForSpace(c anyvec.Creator, s *gym.Space) (gymSpaceConverter, error
 
 type boxSpaceConverter struct {
 	Creator anyvec.Creator
+	Len     int
 }
 
-func (b *boxSpaceConverter) ToGym(in anyvec.Vector) interface{} {
+func (b *boxSpaceConverter) VecLen() int {
+	return b.Len
+}
+
+func (b *boxSpaceConverter) ToGym(in anyvec.Vector) (interface{}, error) {
+	if in.Len() != b.VecLen() {
+		return nil, errSpaceLength
+	}
 	switch data := in.Data().(type) {
 	case []float64:
-		return data
+		return data, nil
 	case []float32:
 		res := make([]float64, len(data))
 		for i, x := range data {
 			res[i] = float64(x)
 		}
-		return res
+		return res, nil
 	default:
-		panic(fmt.Sprintf("unsupported numeric list: %T", data))
+		return nil, fmt.Errorf("unsupported numeric list: %T", data)
 	}
 }
 
@@ -137,8 +165,15 @@ type discreteSpaceConverter struct {
 	N       int
 }
 
-func (d *discreteSpaceConverter) ToGym(in anyvec.Vector) interface{} {
-	return anyvec.MaxIndex(in)
+func (d *discreteSpaceConverter) VecLen() int {
+	return d.N
+}
+
+func (d *discreteSpaceConverter) ToGym(in anyvec.Vector) (interface{}, error) {
+	if in.Len() != d.VecLen() {
+		return nil, errSpaceLength
+	}
+	return anyvec.MaxIndex(in), nil
 }
 
 func (d *discreteSpaceConverter) FromGym(in gym.Obs) (anyvec.Vector, error) {
@@ -149,4 +184,54 @@ func (d *discreteSpaceConverter) FromGym(in gym.Obs) (anyvec.Vector, error) {
 	out := make([]float64, d.N)
 	out[num] = 1
 	return d.Creator.MakeVectorData(d.Creator.MakeNumericList(out)), nil
+}
+
+type tupleSpaceConverter struct {
+	Creator anyvec.Creator
+	Spaces  []gymSpaceConverter
+}
+
+func (t *tupleSpaceConverter) VecLen() int {
+	var size int
+	for _, s := range t.Spaces {
+		size += s.VecLen()
+	}
+	return size
+}
+
+func (t *tupleSpaceConverter) ToGym(in anyvec.Vector) (interface{}, error) {
+	if in.Len() != t.VecLen() {
+		return nil, errSpaceLength
+	}
+	var res []interface{}
+	for _, s := range t.Spaces {
+		subVec := in.Slice(0, s.VecLen())
+		in = in.Slice(s.VecLen(), in.Len())
+		gymObj, err := s.ToGym(subVec)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, gymObj)
+	}
+	return res, nil
+}
+
+func (t *tupleSpaceConverter) FromGym(in gym.Obs) (anyvec.Vector, error) {
+	subObs, err := gym.UnpackTuple(in)
+	if err != nil {
+		return nil, err
+	}
+	if len(subObs) != len(t.Spaces) {
+		return nil, fmt.Errorf("expected %d tuple elements but got %d", len(t.Spaces),
+			len(subObs))
+	}
+	var reses []anyvec.Vector
+	for i, obs := range subObs {
+		subVec, err := t.Spaces[i].FromGym(obs)
+		if err != nil {
+			return nil, err
+		}
+		reses = append(reses, subVec)
+	}
+	return t.Creator.Concat(reses...), nil
 }
