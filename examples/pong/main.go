@@ -71,7 +71,8 @@ func main() {
 			ActionSpace: actionSpace,
 
 			// Speed things up a bit.
-			Iters: 4,
+			Iters:  4,
+			Reduce: (&anyrl.FracReducer{Frac: 0.1}).Reduce,
 
 			ApplyPolicy: func(seq lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader {
 				out := lazyrnn.FixedHSM(30, false, seq, b)
