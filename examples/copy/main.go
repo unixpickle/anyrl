@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"time"
 
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
@@ -35,7 +34,7 @@ func main() {
 
 	// Start monitoring.
 	monitorFile := "gym-monitor"
-	must(client.Monitor(monitorFile, true, false, true))
+	must(client.Monitor(monitorFile, true, false, CaptureVideo))
 
 	// Setup vector creator.
 	creator := anyvec32.CurrentCreator()
@@ -102,10 +101,11 @@ func main() {
 		packed := anyrl.PackRolloutSets(rollouts)
 
 		// Print stats for the batch.
-		log.Printf("batch %d: mean=%f", batchIdx, packed.Rewards.Mean())
+		entropyReg := &anypg.EntropyReg{Entropyer: actionSpace, Coeff: 1}
+		entropy := anypg.AverageReg(creator, packed.AgentOuts, entropyReg)
+		log.Printf("batch %d: mean=%f entropy=%f", batchIdx, packed.Rewards.Mean(),
+			entropy)
 		batchIdx++
-
-		time.Sleep(time.Second / 5)
 
 		// Train on the rollouts.
 		grad := trpo.Run(packed)
