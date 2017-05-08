@@ -76,13 +76,20 @@ func (t *TRPO) Run(r *anyrl.RolloutSet) anydiff.Grad {
 func (t *TRPO) stepSize(r *anyrl.RolloutSet, grad anydiff.Grad,
 	outSeq lazyseq.Rereader) anyvec.Numeric {
 	c := creatorFromGrad(grad)
+	ops := c.NumOps()
 	dotProd := dotGrad(grad, t.applyFisher(r, grad, outSeq))
-	resVec := c.MakeVector(1)
-	resVec.AddScalar(dotProd)
-	anyvec.Pow(resVec, c.MakeNumeric(-1))
-	resVec.Scale(c.MakeNumeric(2 * t.targetKL()))
-	anyvec.Pow(resVec, c.MakeNumeric(0.5))
-	return anyvec.Sum(resVec)
+	zero := c.MakeNumeric(0)
+
+	// The fisher-vector product might be less than zero due
+	// to rounding errors.
+	if ops.Less(dotProd, zero) || ops.Equal(dotProd, zero) {
+		return zero
+	}
+
+	return ops.Pow(
+		ops.Div(c.MakeNumeric(2*t.targetKL()), dotProd),
+		c.MakeNumeric(0.5),
+	)
 }
 
 func (t *TRPO) acceptable(r *anyrl.RolloutSet, grad anydiff.Grad,
