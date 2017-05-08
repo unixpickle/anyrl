@@ -8,6 +8,7 @@ import (
 
 	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anynet"
+	"github.com/unixpickle/anynet/anyconv"
 	"github.com/unixpickle/anynet/anymisc"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyrl"
@@ -25,6 +26,9 @@ const (
 	Host         = "localhost:5001"
 	ParallelEnvs = 8
 	BatchSteps   = 100000
+
+	FrameWidth  = 160
+	FrameHeight = 210
 )
 
 const (
@@ -39,6 +43,7 @@ func main() {
 
 	// Create multiple environment instances so that we
 	// can record multiple episodes at once.
+	log.Println("Creating environments...")
 	var envs []anyrl.Env
 	for i := 0; i < ParallelEnvs; i++ {
 		// Connect to gym server.
@@ -51,7 +56,7 @@ func main() {
 		env, err := anyrl.GymEnv(creator, client, RenderEnv)
 		must(err)
 
-		envs = append(envs, &PreprocessEnv{Env: env})
+		envs = append(envs, env)
 	}
 
 	// Create a neural network policy.
@@ -140,17 +145,26 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 		return res
 	} else {
 		log.Println("Created new network.")
+		markup := `
+			Input(w=160, h=210, d=3)
+
+			# Pixel values in [0, 255] are too big.
+			Linear(scale=0.01)
+
+			Conv(w=4, h=4, n=16, sx=4, sy=4)
+			ReLU
+			Conv(w=4, h=4, n=32, sx=2, sy=2)
+			ReLU
+			FC(out=128)
+			ReLU
+		`
+		convNet, err := anyconv.FromMarkup(creator, markup)
+		must(err)
 		return anyrnn.Stack{
+			&anyrnn.LayerBlock{Layer: convNet},
+			anymisc.NewNPRNN(creator, 128, 128),
 			&anyrnn.LayerBlock{
-				Layer: anynet.Net{
-					// Most inputs are 0, so we can amplify the effect
-					// of non-zero inputs a bit.
-					anynet.NewAffine(creator, 8, 0),
-				},
-			},
-			anymisc.NewNPRNN(creator, PreprocessedSize, 256),
-			&anyrnn.LayerBlock{
-				Layer: anynet.NewFCZero(creator, 256, 6),
+				Layer: anynet.NewFCZero(creator, 128, 6),
 			},
 		}
 	}
