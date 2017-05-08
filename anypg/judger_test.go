@@ -2,13 +2,9 @@ package anypg
 
 import (
 	"math"
-	"reflect"
 	"testing"
 
-	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anyrl"
-	"github.com/unixpickle/anyvec"
-	"github.com/unixpickle/lazyseq"
 )
 
 func TestQJudger(t *testing.T) {
@@ -91,25 +87,5 @@ func testRewardsEquiv(t *testing.T, actual, expected anyrl.Rewards) {
 			t.Errorf("sequence %d: expected %v but got %v", seqIdx,
 				expectedSeq, actualSeq)
 		}
-	}
-}
-func testTapeEquiv(t *testing.T, tapeOut lazyseq.Tape, expected []*anyseq.Batch) {
-	actual := tapeOut.ReadTape(0, -1)
-	for i, x := range expected {
-		a := <-actual
-		if !reflect.DeepEqual(x.Present, a.Present) {
-			t.Errorf("bad present map (%d): got %v expected %v", i,
-				a.Present, x.Present)
-			continue
-		}
-		diff := x.Packed.Copy()
-		diff.Sub(a.Packed)
-		if anyvec.AbsMax(diff).(float64) > 1e-4 {
-			t.Errorf("bad vector (%d): got %v expected %v", i,
-				a.Packed.Data(), x.Packed.Data())
-		}
-	}
-	if _, ok := <-actual; ok {
-		t.Errorf("expected end of stream")
 	}
 }
