@@ -149,6 +149,9 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 		markup := `
 			Input(w=160, h=210, d=3)
 
+			# Faster convolutions for smaller input.
+			Resize(w=80, h=105)
+
 			# Pixel values in [0, 255] are too big.
 			Linear(scale=0.01)
 
@@ -161,6 +164,7 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 		`
 		convNet, err := anyconv.FromMarkup(creator, markup)
 		must(err)
+		convNet = setupVisionLayers(convNet.(anynet.Net))
 		return anyrnn.Stack{
 			&anyrnn.LayerBlock{Layer: convNet},
 			anymisc.NewNPRNN(creator, 128, 128),
@@ -168,6 +172,34 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 				Layer: anynet.NewFCZero(creator, 128, 6),
 			},
 		}
+	}
+}
+
+func setupVisionLayers(net anynet.Net) anynet.Net {
+	for _, layer := range net {
+		if conv, ok := layer.(*anyconv.Conv); ok {
+			projectOutSolidColors(conv)
+
+			// Prevent ReLUs from being 0 at first.
+			bias := conv.Biases.Vector.Creator().MakeNumeric(1)
+			conv.Biases.Vector.AddScalar(bias)
+		}
+	}
+	return net
+}
+
+func projectOutSolidColors(layer *anyconv.Conv) {
+	filters := layer.Filters.Vector
+	inDepth := layer.InputDepth
+	numFilters := layer.FilterCount
+	filterSize := filters.Len() / numFilters
+	for i := 0; i < numFilters; i++ {
+		filter := filters.Slice(i*filterSize, (i+1)*filterSize)
+
+		// Compute the mean for each input channel.
+		negMean := anyvec.SumRows(filter, inDepth)
+		negMean.Scale(negMean.Creator().MakeNumeric(-1 / float64(filterSize/inDepth)))
+		anyvec.AddRepeated(filter, negMean)
 	}
 }
 
