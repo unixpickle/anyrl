@@ -63,25 +63,6 @@ func main() {
 	policy := loadOrCreateNetwork(creator)
 	actionSpace := anyrl.Softmax{}
 
-	// Setup Trust Region Policy Optimization for training.
-	trpo := &anypg.TRPO{
-		NaturalPG: anypg.NaturalPG{
-			Policy:      policy,
-			Params:      policy.Parameters(),
-			ActionSpace: actionSpace,
-
-			// Speed things up a bit.
-			Iters:  4,
-			Reduce: (&anyrl.FracReducer{Frac: 0.1}).Reduce,
-
-			ApplyPolicy: func(seq lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader {
-				out := lazyrnn.FixedHSM(30, false, seq, b)
-				return lazyseq.Lazify(lazyseq.Unlazify(out))
-			},
-			ActionJudger: &anypg.QJudger{Discount: 0.99},
-		},
-	}
-
 	// Setup an RNNRoller for producing rollouts.
 	roller := &anyrl.RNNRoller{
 		Block:       policy,
@@ -92,6 +73,28 @@ func main() {
 		// program would use way too much memory.
 		MakeInputTape: func() (lazyseq.Tape, chan<- *anyseq.Batch) {
 			return lazyseq.CompressedUint8Tape(flate.DefaultCompression)
+		},
+	}
+
+	// Setup Trust Region Policy Optimization for training.
+	trpo := &anypg.TRPO{
+		NaturalPG: anypg.NaturalPG{
+			Policy:      policy,
+			Params:      policy.Parameters(),
+			ActionSpace: actionSpace,
+
+			// Speed things up a bit.
+			Iters: 4,
+			Reduce: (&anyrl.FracReducer{
+				Frac:          0.1,
+				MakeInputTape: roller.MakeInputTape,
+			}).Reduce,
+
+			ApplyPolicy: func(seq lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader {
+				out := lazyrnn.FixedHSM(30, false, seq, b)
+				return lazyseq.Lazify(lazyseq.Unlazify(out))
+			},
+			ActionJudger: &anypg.QJudger{Discount: 0.99},
 		},
 	}
 
