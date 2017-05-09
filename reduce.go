@@ -11,6 +11,20 @@ import (
 // a fraction of the rollouts.
 type FracReducer struct {
 	Frac float64
+
+	// These TapeMakers are called to produce caches of
+	// the reduced tapes.
+	// If a TapeMaker is nil, no cache is used for the
+	// corresponding tape.
+	//
+	// You may want to set these if you plan to use a
+	// reduced tape more than once, since it may be more
+	// efficient to cache a reduced version of the tape
+	// than to keep re-reading the original tape and
+	// reducing it on the fly.
+	MakeInputTape    TapeMaker
+	MakeActionTape   TapeMaker
+	MakeAgentOutTape TapeMaker
 }
 
 // Reduce reduces the set of rollouts.
@@ -26,12 +40,27 @@ func (f *FracReducer) Reduce(r *RolloutSet) *RolloutSet {
 		present[j] = true
 	}
 	res := &RolloutSet{
-		Inputs:  lazyseq.ReduceTape(r.Inputs, present),
-		Actions: lazyseq.ReduceTape(r.Actions, present),
+		Inputs:  reduceTape(f.MakeInputTape, r.Inputs, present),
+		Actions: reduceTape(f.MakeActionTape, r.Actions, present),
 		Rewards: r.Rewards.Reduce(present),
 	}
 	if r.AgentOuts != nil {
-		res.AgentOuts = lazyseq.ReduceTape(r.AgentOuts, present)
+		res.AgentOuts = reduceTape(f.MakeAgentOutTape, r.AgentOuts, present)
 	}
 	return res
+}
+
+func reduceTape(maker TapeMaker, t lazyseq.Tape, present []bool) lazyseq.Tape {
+	if maker == nil {
+		return lazyseq.ReduceTape(t, present)
+	} else {
+		newTape, writer := maker()
+		go func() {
+			defer close(writer)
+			for batch := range lazyseq.ReduceTape(t, present).ReadTape(0, -1) {
+				writer <- batch
+			}
+		}()
+		return newTape
+	}
 }
