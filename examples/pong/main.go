@@ -156,7 +156,7 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 			Resize(w=80, h=105)
 
 			# Pixel values in [0, 255] are too big.
-			Linear(scale=0.01)
+			Linear(scale=0.2)
 
 			Conv(w=4, h=4, n=16, sx=4, sy=4)
 			ReLU
@@ -180,29 +180,42 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 
 func setupVisionLayers(net anynet.Net) anynet.Net {
 	for _, layer := range net {
-		if conv, ok := layer.(*anyconv.Conv); ok {
-			projectOutSolidColors(conv)
-
-			// Prevent ReLUs from being 0 at first.
-			bias := conv.Biases.Vector.Creator().MakeNumeric(1)
-			conv.Biases.Vector.AddScalar(bias)
-		}
+		projectOutSolidColors(layer)
+		boostBiases(layer)
 	}
 	return net
 }
 
-func projectOutSolidColors(layer *anyconv.Conv) {
-	filters := layer.Filters.Vector
-	inDepth := layer.InputDepth
-	numFilters := layer.FilterCount
-	filterSize := filters.Len() / numFilters
-	for i := 0; i < numFilters; i++ {
-		filter := filters.Slice(i*filterSize, (i+1)*filterSize)
+func projectOutSolidColors(layer anynet.Layer) {
+	switch layer := layer.(type) {
+	case *anyconv.Conv:
+		filters := layer.Filters.Vector
+		inDepth := layer.InputDepth
+		numFilters := layer.FilterCount
+		filterSize := filters.Len() / numFilters
+		for i := 0; i < numFilters; i++ {
+			filter := filters.Slice(i*filterSize, (i+1)*filterSize)
 
-		// Compute the mean for each input channel.
-		negMean := anyvec.SumRows(filter, inDepth)
-		negMean.Scale(negMean.Creator().MakeNumeric(-1 / float64(filterSize/inDepth)))
-		anyvec.AddRepeated(filter, negMean)
+			// Compute the mean for each input channel.
+			negMean := anyvec.SumRows(filter, inDepth)
+			negMean.Scale(negMean.Creator().MakeNumeric(-1 / float64(filterSize/inDepth)))
+			anyvec.AddRepeated(filter, negMean)
+		}
+	case *anynet.FC:
+		negMean := anyvec.SumCols(layer.Weights.Vector, layer.OutCount)
+		negMean.Scale(negMean.Creator().MakeNumeric(-1 / float64(layer.InCount)))
+		anyvec.AddChunks(layer.Weights.Vector, negMean)
+	}
+}
+
+func boostBiases(layer anynet.Layer) {
+	switch layer := layer.(type) {
+	case *anyconv.Conv:
+		bias := layer.Biases.Vector.Creator().MakeNumeric(1)
+		layer.Biases.Vector.AddScalar(bias)
+	case *anynet.FC:
+		bias := layer.Biases.Vector.Creator().MakeNumeric(1)
+		layer.Biases.Vector.AddScalar(bias)
 	}
 }
 
