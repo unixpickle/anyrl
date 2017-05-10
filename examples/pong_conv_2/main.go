@@ -81,7 +81,7 @@ func main() {
 			ActionSpace: actionSpace,
 
 			// Speed things up a bit.
-			Iters: 4,
+			Iters: 10,
 			Reduce: (&anyrl.FracReducer{
 				Frac:          0.1,
 				MakeInputTape: roller.MakeInputTape,
@@ -125,6 +125,9 @@ func main() {
 			log.Println("Training on batch...")
 			grad := trpo.Run(r)
 			trainLock.Lock()
+			for i, param := range anynet.AllParameters(policy) {
+				log.Println("param", i, "mag", anyvec.Norm(grad[param]))
+			}
 			grad.AddToVars()
 			trainLock.Unlock()
 		}
@@ -149,21 +152,23 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 		markup := `
 			Input(w=80, h=80, d=1)
 
-			Conv(w=4, h=4, n=16, sx=4, sy=4)
+			Conv(w=4, h=4, n=16, sx=2, sy=2)
 			ReLU
-			Conv(w=4, h=4, n=32, sx=2, sy=2)
+			FC(out=256)
 			ReLU
-			FC(out=128)
-			ReLU
+			#Conv(w=4, h=4, n=16, sx=2, sy=2)
+			#ReLU
+			#FC(out=128)
+			#ReLU
 		`
 		convNet, err := anyconv.FromMarkup(creator, markup)
 		must(err)
-		convNet = setupVisionLayers(convNet.(anynet.Net))
+		//convNet = setupVisionLayers(convNet.(anynet.Net))
 		return anyrnn.Stack{
 			&anyrnn.LayerBlock{Layer: convNet},
-			anymisc.NewNPRNN(creator, 128, 128),
+			anymisc.NewNPRNN(creator, 256, 256),
 			&anyrnn.LayerBlock{
-				Layer: anynet.NewFCZero(creator, 128, 6),
+				Layer: anynet.NewFCZero(creator, 256, 6),
 			},
 		}
 	}
