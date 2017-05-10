@@ -154,6 +154,8 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 
 			Conv(w=4, h=4, n=16, sx=2, sy=2)
 			ReLU
+			Conv(w=4, h=4, n=32, sx=2, sy=2)
+			ReLU
 			FC(out=256)
 			ReLU
 			#Conv(w=4, h=4, n=16, sx=2, sy=2)
@@ -163,9 +165,10 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 		`
 		convNet, err := anyconv.FromMarkup(creator, markup)
 		must(err)
-		//convNet = setupVisionLayers(convNet.(anynet.Net))
+		net := convNet.(anynet.Net)
+		//net = setupVisionLayers(net)
 		return anyrnn.Stack{
-			&anyrnn.LayerBlock{Layer: convNet},
+			&anyrnn.LayerBlock{Layer: net},
 			anymisc.NewNPRNN(creator, 256, 256),
 			&anyrnn.LayerBlock{
 				Layer: anynet.NewFCZero(creator, 256, 6),
