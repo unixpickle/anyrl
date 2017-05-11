@@ -1,6 +1,8 @@
 package anypg
 
 import (
+	"log"
+
 	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anynet"
@@ -128,6 +130,8 @@ func (t *TRPO) acceptable(r *anyrl.RolloutSet, grad anydiff.Grad,
 	outStats := lazyseq.Mean(mappedOut).Output()
 	improvement := anyvec.Sum(outStats.Slice(0, 1))
 	kl := anyvec.Sum(outStats.Slice(1, 2))
+
+	log.Println("kl", kl, "imp", improvement)
 
 	targetImprovement := c.MakeNumeric(0)
 	targetKL := c.MakeNumeric(t.targetKL())

@@ -52,13 +52,26 @@ func preprocessImage(sampler anyvec.Mapper, image anyvec.Vector) anyvec.Vector {
 	sampler.Map(image, out)
 
 	// Find background pixels
-	bg1 := out.Copy()
+	/*bg1 := out.Copy()
 	anyvec.EqualTo(out, cr.MakeNumeric(144))
 	anyvec.EqualTo(bg1, cr.MakeNumeric(109))
 	out.Add(bg1)
 
 	// Set everything that's not a bg to 1.
-	anyvec.Complement(out)
+	anyvec.Complement(out)*/
+
+	// Manual object detection.
+	/*enemy := out.Copy()
+	anyvec.EqualTo(enemy, cr.MakeNumeric(213))
+	us := out.Copy()
+	anyvec.EqualTo(us, cr.MakeNumeric(91))
+	ball := out.Copy()
+	anyvec.EqualTo(ball, cr.MakeNumeric(236))
+
+	out.Scale(cr.MakeNumeric(0))
+	out.Add(enemy)
+	out.Add(us)
+	out.Add(ball)*/
 
 	return out
 }

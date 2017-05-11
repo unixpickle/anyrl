@@ -152,6 +152,17 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 		markup := `
 			Input(w=80, h=80, d=1)
 
+			Linear(scale=0.003921568627, bias=-0.5647058824)
+			#Residual {
+			#	Projection {
+			#		Linear(scale=-1)
+			#		ReLU
+			#	}
+			#	ReLU
+			#}
+
+			Linear(scale=24)
+
 			Conv(w=4, h=4, n=16, sx=2, sy=2)
 			ReLU
 			Conv(w=4, h=4, n=32, sx=2, sy=2)
@@ -166,7 +177,7 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 		convNet, err := anyconv.FromMarkup(creator, markup)
 		must(err)
 		net := convNet.(anynet.Net)
-		//net = setupVisionLayers(net)
+		net = setupVisionLayers(net)
 		return anyrnn.Stack{
 			&anyrnn.LayerBlock{Layer: net},
 			anymisc.NewNPRNN(creator, 256, 256),
@@ -179,7 +190,7 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 
 func setupVisionLayers(net anynet.Net) anynet.Net {
 	for _, layer := range net {
-		projectOutSolidColors(layer)
+		//projectOutSolidColors(layer)
 		boostBiases(layer)
 	}
 	return net
