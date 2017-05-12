@@ -9,7 +9,7 @@ const (
 	FrameWidth  = 160
 	FrameHeight = 210
 
-	PreprocessedSize = 80 * 80
+	PreprocessedSize = 80 * 105 * 3
 )
 
 type PreprocessEnv struct {
@@ -81,11 +81,13 @@ func makeInputSubsampler(cr anyvec.Creator) anyvec.Mapper {
 	//  - crop box from x=35 to x=195
 	//  - subsample by factor of 2
 	//  - select the red channel
-	mapping := make([]int, 0, 80*80)
-	for y := 35; y < 195; y += 2 {
+	mapping := make([]int, 0, PreprocessedSize)
+	for y := 0; y < FrameHeight; y += 2 {
 		for x := 0; x < FrameWidth; x += 2 {
 			sourceIdx := y*FrameWidth*3 + x*3
-			mapping = append(mapping, sourceIdx)
+			for d := 0; d < 3; d++ {
+				mapping = append(mapping, sourceIdx+d)
+			}
 		}
 	}
 	return cr.MakeMapper(FrameWidth*FrameHeight*3, mapping)

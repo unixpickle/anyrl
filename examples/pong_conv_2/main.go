@@ -150,7 +150,7 @@ func loadOrCreateNetwork(creator anyvec.Creator) anyrnn.Stack {
 	} else {
 		log.Println("Created new network.")
 		markup := `
-			Input(w=80, h=80, d=1)
+			Input(w=80, h=105, d=3)
 
 			Linear(scale=0.003921568627, bias=-0.5647058824)
 			#Residual {
