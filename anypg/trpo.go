@@ -2,7 +2,6 @@ package anypg
 
 import (
 	"github.com/unixpickle/anydiff"
-	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyrl"
@@ -14,7 +13,7 @@ import (
 // Default settings for TRPO.
 const (
 	DefaultTargetKL        = 0.01
-	DefaultLineSearchDecay = 0.5
+	DefaultLineSearchDecay = 0.7
 	DefaultMaxLineSearch   = 20
 )
 
@@ -52,32 +51,30 @@ type TRPO struct {
 // Run computes a step to improve the agent's performance
 // on the rollouts.
 func (t *TRPO) Run(r *anyrl.RolloutSet) anydiff.Grad {
-	grad := t.NaturalPG.Run(r)
-	if len(grad) == 0 || allZeros(grad) {
-		return grad
+	res := t.NaturalPG.run(r)
+	if res.ZeroGrad {
+		return res.Grad
 	}
-	c := creatorFromGrad(grad)
-	outs, outSeq := t.storePolicyOutputs(c, r)
-	outSeq.Reuse()
-	stepSize := t.stepSize(r, grad, outSeq)
+	c := creatorFromGrad(res.Grad)
+	stepSize := t.stepSize(res)
 
-	grad.Scale(stepSize)
+	res.Grad.Scale(stepSize)
 
 	for i := 0; i < t.maxLineSearch(); i++ {
-		if t.acceptable(r, grad, outs) {
+		if t.acceptable(r, res) {
 			break
 		}
-		grad.Scale(c.MakeNumeric(t.lineSearchDecay()))
+		res.Grad.Scale(c.MakeNumeric(t.lineSearchDecay()))
 	}
 
-	return grad
+	return res.Grad
 }
 
-func (t *TRPO) stepSize(r *anyrl.RolloutSet, grad anydiff.Grad,
-	outSeq lazyseq.Rereader) anyvec.Numeric {
-	c := creatorFromGrad(grad)
+func (t *TRPO) stepSize(r *naturalPGRes) anyvec.Numeric {
+	c := creatorFromGrad(r.Grad)
 	ops := c.NumOps()
-	dotProd := dotGrad(grad, t.applyFisher(r, grad, outSeq))
+	r.ReducedOut.Reuse()
+	dotProd := dotGrad(r.Grad, t.applyFisher(r.ReducedRollouts, r.Grad, r.ReducedOut))
 	zero := c.MakeNumeric(0)
 
 	// The fisher-vector product might be less than zero due
@@ -92,14 +89,13 @@ func (t *TRPO) stepSize(r *anyrl.RolloutSet, grad anydiff.Grad,
 	)
 }
 
-func (t *TRPO) acceptable(r *anyrl.RolloutSet, grad anydiff.Grad,
-	outs lazyseq.Tape) bool {
-	c := creatorFromGrad(grad)
+func (t *TRPO) acceptable(r *anyrl.RolloutSet, npg *naturalPGRes) bool {
+	c := creatorFromGrad(npg.Grad)
 	inSeq := lazyseq.TapeRereader(c, r.Inputs)
 	rewardSeq := lazyseq.TapeRereader(c, t.actionJudger().JudgeActions(r).Tape(c))
-	oldOutSeq := lazyseq.TapeRereader(c, outs)
-	newOutSeq := t.apply(inSeq, t.steppedPolicy(grad))
+	newOutSeq := t.apply(inSeq, t.steppedPolicy(npg.Grad))
 	sampledOut := lazyseq.TapeRereader(c, r.Actions)
+	npg.PolicyOut.Reuse()
 
 	// At each timestep, compute a pair <improvement, kl divergence>.
 	mappedOut := lazyseq.MapN(func(n int, v ...anydiff.Res) anydiff.Res {
@@ -123,7 +119,7 @@ func (t *TRPO) acceptable(r *anyrl.RolloutSet, grad anydiff.Grad,
 		anyvec.Transpose(joined, transposed, 2)
 
 		return anydiff.NewConst(transposed)
-	}, rewardSeq, oldOutSeq, newOutSeq, sampledOut)
+	}, rewardSeq, npg.PolicyOut, newOutSeq, sampledOut)
 
 	outStats := lazyseq.Mean(mappedOut).Output()
 	improvement := anyvec.Sum(outStats.Slice(0, 1))
@@ -134,27 +130,6 @@ func (t *TRPO) acceptable(r *anyrl.RolloutSet, grad anydiff.Grad,
 	ops := c.NumOps()
 	return ops.Greater(improvement, targetImprovement) &&
 		ops.Less(kl, targetKL)
-}
-
-// storePolicyOutputs evaluates the policy on the inputs
-// and stores the results to a tape.
-// It also returns a lazyseq.Reuser for the output.
-// The lazyseq.Reuser will be used, so you must call
-// Reuse() on it before using it again.
-func (n *NaturalPG) storePolicyOutputs(c anyvec.Creator,
-	r *anyrl.RolloutSet) (lazyseq.Tape, lazyseq.Reuser) {
-	tape, writer := lazyseq.ReferenceTape()
-
-	out := lazyseq.MakeReuser(n.apply(lazyseq.TapeRereader(c, r.Inputs), n.Policy))
-	for outVec := range out.Forward() {
-		writer <- &anyseq.Batch{
-			Present: outVec.Present,
-			Packed:  outVec.Packed.Copy(),
-		}
-	}
-
-	close(writer)
-	return tape, out
 }
 
 func (t *TRPO) steppedPolicy(step anydiff.Grad) anyrnn.Block {

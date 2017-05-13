@@ -68,36 +68,42 @@ type NaturalPG struct {
 
 // Run computes the natural gradient for the rollouts.
 func (n *NaturalPG) Run(r *anyrl.RolloutSet) anydiff.Grad {
-	var seq lazyseq.Reuser
+	return n.run(r).Grad
+}
+
+func (n *NaturalPG) run(r *anyrl.RolloutSet) *naturalPGRes {
+	res := &naturalPGRes{ReducedRollouts: r}
 	pg := &PG{
 		Policy: func(in lazyseq.Rereader) lazyseq.Rereader {
-			seq = lazyseq.MakeReuser(n.apply(in, n.Policy))
-			return seq
+			res.PolicyOut = lazyseq.MakeReuser(n.apply(in, n.Policy))
+			res.ReducedOut = res.PolicyOut
+			return res.PolicyOut
 		},
 		Params:       n.Params,
 		ActionSpace:  n.ActionSpace,
 		ActionJudger: n.ActionJudger,
 		Regularizer:  n.Regularizer,
 	}
-	grad := pg.Run(r)
+	res.Grad = pg.Run(r)
 
 	// We check for an all-zero gradient because that is
 	// a fairly common case (if all rollouts were optimal,
 	// the gradient may be 0).
-	if len(grad) == 0 || allZeros(grad) {
-		return grad
+	if len(res.Grad) == 0 || allZeros(res.Grad) {
+		res.ZeroGrad = true
+		return res
 	}
 
 	if n.Reduce != nil {
-		c := creatorFromGrad(grad)
-		r = n.Reduce(r)
-		in := lazyseq.TapeRereader(c, r.Inputs)
-		seq = lazyseq.MakeReuser(n.apply(in, n.Policy))
+		c := creatorFromGrad(res.Grad)
+		res.ReducedRollouts = n.Reduce(r)
+		in := lazyseq.TapeRereader(c, res.ReducedRollouts.Inputs)
+		res.ReducedOut = lazyseq.MakeReuser(n.apply(in, n.Policy))
 	}
 
-	n.conjugateGradients(r, seq, grad)
+	n.conjugateGradients(res.ReducedRollouts, res.ReducedOut, res.Grad)
 
-	return grad
+	return res
 }
 
 func (n *NaturalPG) conjugateGradients(r *anyrl.RolloutSet, policyOuts lazyseq.Reuser,
@@ -236,6 +242,16 @@ func (n *NaturalPG) iters() int {
 	} else {
 		return DefaultConjGradIters
 	}
+}
+
+type naturalPGRes struct {
+	Grad      anydiff.Grad
+	PolicyOut lazyseq.Reuser
+	ZeroGrad  bool
+
+	// Always non-nil, but may equal the unreduced version.
+	ReducedOut      lazyseq.Reuser
+	ReducedRollouts *anyrl.RolloutSet
 }
 
 // makeFwdTape wraps a Tape to translate it to a forward

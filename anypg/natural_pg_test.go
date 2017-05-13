@@ -80,17 +80,22 @@ func TestFisher(t *testing.T) {
 		anyvec.Rand(vec, anyvec.Normal, nil)
 		vec.Scale(c.MakeNumeric(0.0001))
 	}
-	outSeq := npg.apply(lazyseq.TapeRereader(c, r.Inputs), npg.Policy)
-	stored, _ := npg.storePolicyOutputs(c, r)
+	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(c, r.Inputs), npg.Policy))
+	stored, writer := lazyseq.ReferenceTape()
+	for item := range outSeq.Forward() {
+		writer <- item.Reduce(item.Present)
+	}
+	close(writer)
+	outSeq.Reuse()
 
 	applied := npg.applyFisher(r, inGrad, outSeq)
 	actualOutput := 0.5 * dotGrad(inGrad, applied).(float64)
 
 	inGrad.AddToVars()
-	outSeq = npg.apply(lazyseq.TapeRereader(c, r.Inputs), block)
+	newOutSeq := npg.apply(lazyseq.TapeRereader(c, r.Inputs), block)
 	mapped := lazyseq.MapN(func(num int, v ...anydiff.Res) anydiff.Res {
 		return npg.ActionSpace.KL(v[0], v[1], num)
-	}, lazyseq.TapeRereader(c, stored), outSeq)
+	}, lazyseq.TapeRereader(c, stored), newOutSeq)
 	expectedOutput := anyvec.Sum(lazyseq.Mean(mapped).Output()).(float64)
 
 	diff := (actualOutput - expectedOutput) / actualOutput
