@@ -46,6 +46,12 @@ type TRPO struct {
 	//
 	// If 0, DefaultMaxLineSearch is used.
 	MaxLineSearch int
+
+	// LogLineSearch is called after each iteration of the
+	// objective line search.
+	//
+	// If nil, no logging is done.
+	LogLineSearch func(meanKL, meanImprovement anyvec.Numeric)
 }
 
 // Run computes a step to improve the agent's performance
@@ -124,6 +130,10 @@ func (t *TRPO) acceptable(r *anyrl.RolloutSet, npg *naturalPGRes) bool {
 	outStats := lazyseq.Mean(mappedOut).Output()
 	improvement := anyvec.Sum(outStats.Slice(0, 1))
 	kl := anyvec.Sum(outStats.Slice(1, 2))
+
+	if t.LogLineSearch != nil {
+		t.LogLineSearch(kl, improvement)
+	}
 
 	targetImprovement := c.MakeNumeric(0)
 	targetKL := c.MakeNumeric(t.targetKL())
