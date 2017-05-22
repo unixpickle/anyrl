@@ -293,6 +293,30 @@ func TestGaussianKL(t *testing.T) {
 	}
 }
 
+func TestGaussianEntropy(t *testing.T) {
+	c := anyvec64.DefaultCreator{}
+	params := c.MakeVectorData([]float64{
+		1, math.Log(0.5), 1, math.Log(1),
+		3, math.Log(0.7), -1, math.Log(1.5),
+		3, math.Log(0.9), -0.3, math.Log(1),
+	})
+
+	actual := Gaussian{}.Entropy(anydiff.NewConst(params), 3)
+	expected := approb.Mean(50000, func() linalg.Vector {
+		return linalg.Vector(Gaussian{}.LogProb(
+			anydiff.NewConst(params),
+			Gaussian{}.Sample(params, 3),
+			3,
+		).Output().Data().([]float64)).Scale(-1)
+	})
+
+	expRes := anydiff.NewConst(c.MakeVectorData(c.MakeNumericList(expected)))
+	diff := anydiff.Sub(actual, expRes)
+	if anyvec.AbsMax(diff.Output()).(float64) > 1e-2 {
+		t.Errorf("expected %v but got %v", expected, actual.Output().Data())
+	}
+}
+
 func TestTupleSample(t *testing.T) {
 	c := anyvec64.DefaultCreator{}
 	in := c.MakeVectorData([]float64{

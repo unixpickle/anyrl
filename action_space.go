@@ -304,6 +304,27 @@ func (g Gaussian) KL(params1, params2 anydiff.Res, batchSize int) anydiff.Res {
 	})
 }
 
+// Entropy computes the differential entropy for the
+// batches of distributions.
+//
+// Differential entropy is assumed to be additive.
+// The entropy of a Cartesian product is the sum of the
+// entropies.
+func (g Gaussian) Entropy(params anydiff.Res, batchSize int) anydiff.Res {
+	c := params.Output().Creator()
+	return anydiff.Pool(params, func(params anydiff.Res) anydiff.Res {
+		_, logVariance := g.splitParams(params)
+		return anydiff.SumCols(&anydiff.Matrix{
+			Data: anydiff.AddScalar(
+				anydiff.Scale(logVariance, c.MakeNumeric(0.5)),
+				c.MakeNumeric(0.5*(1+math.Log(2*math.Pi))),
+			),
+			Rows: batchSize,
+			Cols: logVariance.Output().Len() / batchSize,
+		})
+	})
+}
+
 func (g Gaussian) splitParams(params anydiff.Res) (mean, logVariance anydiff.Res) {
 	halfLen := params.Output().Len() / 2
 	mat := &anydiff.Matrix{Data: params, Rows: halfLen, Cols: 2}
