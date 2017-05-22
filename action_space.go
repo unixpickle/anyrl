@@ -2,6 +2,7 @@ package anyrl
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 
 	"github.com/unixpickle/anydiff"
@@ -205,6 +206,74 @@ func (b *Bernoulli) offOnProbs(params anydiff.Res) anydiff.Res {
 		offProbs := anydiff.LogSigmoid(anydiff.Scale(params, c.MakeNumeric(-1)))
 		return sideBySide(offProbs, onProbs)
 	})
+}
+
+// Gaussian is a continuous action space with values
+// sampled from a parametric Gaussian distribution.
+//
+// For each component of the output, there is a parameter
+// for a mean and one for a variance (in that order).
+// The parameters may be any values, even though variance
+// can only be positive.
+// To deal with this, the variance parameter is fed into
+// the exponential function.
+type Gaussian struct {
+}
+
+// Sample samples continuous values from the distribution.
+func (g Gaussian) Sample(params anyvec.Vector, batchSize int) anyvec.Vector {
+	c := params.Creator()
+
+	transParams := c.MakeVector(params.Len())
+	anyvec.Transpose(params, transParams, params.Len()/2)
+
+	mean := transParams.Slice(0, transParams.Len()/2)
+	stddev := transParams.Slice(transParams.Len()/2, transParams.Len()).Copy()
+
+	// sqrt(e^x) = e^(0.5*x)
+	stddev.Scale(c.MakeNumeric(0.5))
+	anyvec.Exp(stddev)
+
+	noise := c.MakeVector(stddev.Len())
+	anyvec.Rand(noise, anyvec.Normal, nil)
+	noise.Mul(stddev)
+	noise.Add(mean)
+
+	return noise
+}
+
+// LogProb computes the output log densities.
+func (g Gaussian) LogProb(params anydiff.Res, output anyvec.Vector,
+	batch int) anydiff.Res {
+	c := output.Creator()
+	return anydiff.Pool(params, func(params anydiff.Res) anydiff.Res {
+		mean, logVariance := g.splitParams(params)
+		diffs := anydiff.Square(anydiff.Sub(mean, anydiff.NewConst(output)))
+		normalizedDiffs := anydiff.Scale(
+			anydiff.Div(diffs, anydiff.Exp(logVariance)),
+			c.MakeNumeric(-0.5),
+		)
+		// ln(1/sqrt(2*pi*s^2)) = -0.5*(ln(2*pi) + ln(s^2))
+		log2Pi := c.MakeNumeric(math.Log(2 * math.Pi))
+		logNorm := anydiff.Scale(
+			anydiff.AddScalar(logVariance, log2Pi),
+			c.MakeNumeric(-0.5),
+		)
+		return anydiff.SumCols(&anydiff.Matrix{
+			Data: anydiff.Add(logNorm, normalizedDiffs),
+			Rows: batch,
+			Cols: mean.Output().Len() / batch,
+		})
+	})
+}
+
+func (g Gaussian) splitParams(params anydiff.Res) (mean, logVariance anydiff.Res) {
+	halfLen := params.Output().Len() / 2
+	mat := &anydiff.Matrix{Data: params, Rows: halfLen, Cols: 2}
+	tr := anydiff.Transpose(mat)
+	mean = anydiff.Slice(tr.Data, 0, halfLen)
+	logVariance = anydiff.Slice(tr.Data, halfLen, halfLen*2)
+	return
 }
 
 // Tuple is a tuple of action spaces which itself serves

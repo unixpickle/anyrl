@@ -2,11 +2,13 @@ package anyrl
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec64"
+	"github.com/unixpickle/approb"
 )
 
 func TestSoftmaxSample(t *testing.T) {
@@ -199,6 +201,67 @@ func TestBernoulliEntropy(t *testing.T) {
 	)
 
 	assertSimilar(t, actual, expected)
+}
+
+func TestGaussianSample(t *testing.T) {
+	c := anyvec64.DefaultCreator{}
+	params := c.MakeVectorData([]float64{
+		1, math.Log(0.5),
+		1, math.Log(1),
+
+		3, math.Log(0.7),
+		-1, math.Log(1.5),
+	})
+
+	means := []float64{1, 1, 3, -1}
+	variances := []float64{0.5, 1, 0.7, 1.5}
+
+	for comp := 0; comp < 4; comp++ {
+		stddev := math.Sqrt(variances[comp])
+		corr := approb.Correlation(10000, 0.1, func() float64 {
+			return Gaussian{}.Sample(params, 2).Data().([]float64)[comp]
+		}, func() float64 {
+			return rand.NormFloat64()*stddev + means[comp]
+		})
+		if corr < 0.99 {
+			t.Errorf("component %d: correlation was %f", comp, corr)
+		}
+	}
+}
+
+func TestGaussianDensity(t *testing.T) {
+	c := anyvec64.DefaultCreator{}
+	params := c.MakeVectorData([]float64{
+		1, math.Log(0.5),
+		1, math.Log(1),
+
+		3, math.Log(0.7),
+		-1, math.Log(1.5),
+	})
+
+	means := []float64{1, 1, 3, -1}
+	variances := []float64{0.5, 1, 0.7, 1.5}
+
+	logDensity := func(idx int, out float64) float64 {
+		normalizedDist := -(math.Pow(means[idx]-out, 2) / (2 * variances[idx]))
+		normalizer := math.Sqrt(math.Pi * 2 * variances[idx])
+		return math.Log(math.Exp(normalizedDist) / normalizer)
+	}
+
+	for i := 0; i < 20; i++ {
+		sample := Gaussian{}.Sample(params, 2)
+		data := sample.Data().([]float64)
+		actual := Gaussian{}.LogProb(anydiff.NewConst(params), sample, 2).Output()
+		expected := c.MakeVectorData([]float64{
+			logDensity(0, data[0]) + logDensity(1, data[1]),
+			logDensity(2, data[2]) + logDensity(3, data[3]),
+		})
+		diff := actual.Copy()
+		diff.Sub(expected)
+		if anyvec.AbsMax(diff).(float64) > 1e-4 {
+			t.Errorf("expected %v but got %v", expected.Data(), actual.Data())
+		}
+	}
 }
 
 func TestTupleSample(t *testing.T) {
