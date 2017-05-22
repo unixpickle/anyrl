@@ -9,6 +9,7 @@ import (
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/anyvec/anyvec64"
 	"github.com/unixpickle/approb"
+	"github.com/unixpickle/num-analysis/linalg"
 )
 
 func TestSoftmaxSample(t *testing.T) {
@@ -229,7 +230,7 @@ func TestGaussianSample(t *testing.T) {
 	}
 }
 
-func TestGaussianDensity(t *testing.T) {
+func TestGaussianLogProb(t *testing.T) {
 	c := anyvec64.DefaultCreator{}
 	params := c.MakeVectorData([]float64{
 		1, math.Log(0.5),
@@ -261,6 +262,34 @@ func TestGaussianDensity(t *testing.T) {
 		if anyvec.AbsMax(diff).(float64) > 1e-4 {
 			t.Errorf("expected %v but got %v", expected.Data(), actual.Data())
 		}
+	}
+}
+
+func TestGaussianKL(t *testing.T) {
+	c := anyvec64.DefaultCreator{}
+	params1 := c.MakeVectorData([]float64{
+		1, math.Log(0.5), 1, math.Log(1),
+		3, math.Log(0.7), -1, math.Log(1.5),
+		3, math.Log(0.9), -0.3, math.Log(1),
+	})
+	params2 := c.MakeVectorData([]float64{
+		1.5, math.Log(0.5), 1, math.Log(1.5),
+		3, math.Log(0.9), -0.3, math.Log(1),
+		3, math.Log(0.7), -1, math.Log(1.5),
+	})
+
+	actual := Gaussian{}.KL(anydiff.NewConst(params1), anydiff.NewConst(params2), 3)
+	expected := approb.Mean(100000, func() linalg.Vector {
+		sample := Gaussian{}.Sample(params1, 3)
+		logProbs1 := Gaussian{}.LogProb(anydiff.NewConst(params1), sample, 3)
+		logProbs2 := Gaussian{}.LogProb(anydiff.NewConst(params2), sample, 3)
+		return anydiff.Sub(logProbs1, logProbs2).Output().Data().([]float64)
+	})
+
+	expRes := anydiff.NewConst(c.MakeVectorData(c.MakeNumericList(expected)))
+	diff := anydiff.Sub(actual, expRes)
+	if anyvec.AbsMax(diff.Output()).(float64) > 1e-2 {
+		t.Errorf("expected %v but got %v", expected, actual.Output().Data())
 	}
 }
 

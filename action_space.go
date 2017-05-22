@@ -217,8 +217,7 @@ func (b *Bernoulli) offOnProbs(params anydiff.Res) anydiff.Res {
 // can only be positive.
 // To deal with this, the variance parameter is fed into
 // the exponential function.
-type Gaussian struct {
-}
+type Gaussian struct{}
 
 // Sample samples continuous values from the distribution.
 func (g Gaussian) Sample(params anyvec.Vector, batchSize int) anyvec.Vector {
@@ -244,7 +243,7 @@ func (g Gaussian) Sample(params anyvec.Vector, batchSize int) anyvec.Vector {
 
 // LogProb computes the output log densities.
 func (g Gaussian) LogProb(params anydiff.Res, output anyvec.Vector,
-	batch int) anydiff.Res {
+	batchSize int) anydiff.Res {
 	c := output.Creator()
 	return anydiff.Pool(params, func(params anydiff.Res) anydiff.Res {
 		mean, logVariance := g.splitParams(params)
@@ -261,8 +260,46 @@ func (g Gaussian) LogProb(params anydiff.Res, output anyvec.Vector,
 		)
 		return anydiff.SumCols(&anydiff.Matrix{
 			Data: anydiff.Add(logNorm, normalizedDiffs),
-			Rows: batch,
-			Cols: mean.Output().Len() / batch,
+			Rows: batchSize,
+			Cols: mean.Output().Len() / batchSize,
+		})
+	})
+}
+
+// KL computes the KL divergences between two batches of
+// distributions.
+func (g Gaussian) KL(params1, params2 anydiff.Res, batchSize int) anydiff.Res {
+	c := params1.Output().Creator()
+	return anydiff.Pool(params1, func(params1 anydiff.Res) anydiff.Res {
+		return anydiff.Pool(params2, func(params2 anydiff.Res) anydiff.Res {
+			mean1, logVar1 := g.splitParams(params1)
+			mean2, logVar2 := g.splitParams(params2)
+			var1 := anydiff.Exp(logVar1)
+			var2 := anydiff.Exp(logVar2)
+			return anydiff.SumCols(&anydiff.Matrix{
+				// ((u1 - u2)^2 + s1^2 - s2^2) / (2*s2^2) + ln(s2/s1)
+				Data: anydiff.Add(
+					anydiff.Div(
+						anydiff.Add(
+							anydiff.Pow(
+								anydiff.Sub(mean1, mean2),
+								c.MakeNumeric(2),
+							),
+							anydiff.Sub(var1, var2),
+						),
+						anydiff.Scale(
+							var2,
+							c.MakeNumeric(2),
+						),
+					),
+					anydiff.Scale(
+						anydiff.Sub(logVar2, logVar1),
+						c.MakeNumeric(0.5),
+					),
+				),
+				Rows: batchSize,
+				Cols: mean1.Output().Len() / batchSize,
+			})
 		})
 	})
 }
