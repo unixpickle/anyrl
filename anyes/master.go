@@ -55,8 +55,9 @@ type Master struct {
 	// recoverable.
 	SlaveError func(s Slave, err error) error
 
-	slaveLock sync.RWMutex
-	slaves    []*managedSlave
+	slaveLock  sync.RWMutex
+	slaves     []*managedSlave
+	slaveAdded chan struct{}
 
 	updateLock sync.RWMutex
 }
@@ -91,6 +92,12 @@ func (m *Master) AddSlave(s Slave) (err error) {
 		Slave:   s,
 		Version: version,
 	})
+	if m.slaveAdded != nil {
+		select {
+		case m.slaveAdded <- struct{}{}:
+		default:
+		}
+	}
 	m.slaveLock.Unlock()
 
 	return
@@ -121,7 +128,9 @@ func (m *Master) Rollouts(stop *StopConds, n int) (rollouts []*Rollout, err erro
 
 	resChan := make(chan *Rollout, n*2)
 	errChan := make(chan error, 1)
+
 	handledErrChan := make(chan struct{}, 1)
+	slaveAddedChan := m.getSlaveAdded()
 
 	var wg sync.WaitGroup
 	for len(rollouts) < n {
@@ -167,8 +176,9 @@ func (m *Master) Rollouts(stop *StopConds, n int) (rollouts []*Rollout, err erro
 			}
 			return rollouts, err
 		case <-handledErrChan:
-			// A new job is available, so let's iterate to
-			// attempt to assign it.
+			// Attempt to assign the new job.
+		case <-slaveAddedChan:
+			// Attempt to use the new slave.
 		case r := <-resChan:
 			rollouts = append(rollouts, r)
 		}
@@ -301,6 +311,15 @@ func (m *Master) callSlaveError(s Slave, err error) error {
 	} else {
 		return err
 	}
+}
+
+func (m *Master) getSlaveAdded() chan struct{} {
+	m.slaveLock.Lock()
+	defer m.slaveLock.Unlock()
+	if m.slaveAdded == nil {
+		m.slaveAdded = make(chan struct{}, 1)
+	}
+	return m.slaveAdded
 }
 
 type managedSlave struct {
