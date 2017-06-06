@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"time"
 
 	"github.com/unixpickle/essentials"
@@ -224,4 +225,48 @@ func receivePacket(c gobplexer.Connection) (*packet, error) {
 		return nil, fmt.Errorf("bad packet type: %T", packetObj)
 	}
 	return packet, nil
+}
+
+// ProxyListen listens for incomming connections on l and
+// wraps each connection with ProxyConsume.
+// The resulting Slaves are then added to m.
+//
+// If loger is non-nil, it is passed messages whenever a
+// a slave connects or fails to connect with an error.
+//
+// This blocks until l.Accept returns with an error, at
+// which point the error is returned.
+//
+// In order to properly cleanup Slaves, you should close
+// slaves which implement SlaveProxy in m.SlaveError.
+// You should also close all remaining slaves after you
+// are done with m.
+func ProxyListen(l net.Listener, m *Master,
+	logger func(msg ...interface{})) (err error) {
+	defer essentials.AddCtxTo("ProxyListen", &err)
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			return err
+		}
+		go func(conn net.Conn) {
+			sendLog := func(str string) {
+				if logger != nil {
+					logger(conn.RemoteAddr().String() + ": " + str)
+				}
+			}
+			sendLog("new connection")
+			slave, err := ProxyConsume(conn)
+			if err != nil {
+				sendLog(err.Error())
+				return
+			}
+			if err := m.AddSlave(slave); err != nil {
+				slave.Close()
+				sendLog(err.Error())
+				return
+			}
+			sendLog("slave added")
+		}(conn)
+	}
 }

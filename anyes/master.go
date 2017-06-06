@@ -103,6 +103,19 @@ func (m *Master) AddSlave(s Slave) (err error) {
 	return
 }
 
+// Slaves returns a copy of the current list of Slaves.
+//
+// This is thread-safe.
+func (m *Master) Slaves() []Slave {
+	m.slaveLock.RLock()
+	defer m.slaveLock.RUnlock()
+	res := make([]Slave, len(m.slaves))
+	for i, s := range m.slaves {
+		res[i] = s.Slave
+	}
+	return res
+}
+
 // Rollouts gathers 2*n rollouts from the Slaves.
 //
 // This blocks until all rollouts are finished or an error
