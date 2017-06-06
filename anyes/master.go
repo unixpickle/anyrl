@@ -243,6 +243,8 @@ func (m *Master) Update(r []*Rollout) (err error) {
 					default:
 					}
 				}
+			} else {
+				slave.Version = newVersion
 			}
 		}(slave)
 	}
