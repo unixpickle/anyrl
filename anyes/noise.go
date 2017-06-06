@@ -21,11 +21,12 @@ func NewNoise(seed int64, length int) *Noise {
 
 // Gen generates a chunk of noise in a deterministic way
 // based on the given seed.
-func (n *Noise) Gen(seed int64, amount int) []float64 {
+// The noise is scaled by the given factor.
+func (n *Noise) Gen(scale float64, seed int64, amount int) []float64 {
 	gen := rand.New(rand.NewSource(seed))
 	res := make([]float64, amount)
 	for i := 0; i < amount; i++ {
-		res[i] = n.data[gen.Intn(len(n.data))]
+		res[i] = scale * n.data[gen.Intn(len(n.data))]
 	}
 	return res
 }
@@ -40,8 +41,8 @@ func (n *Noise) GenSum(scales []float64, seeds []int64, amount int) []float64 {
 	res := make([]float64, amount)
 	for i, scale := range scales {
 		seed := seeds[i]
-		for i, x := range n.Gen(seed, amount) {
-			res[i] += scale * x
+		for i, x := range n.Gen(scale, seed, amount) {
+			res[i] += x
 		}
 	}
 	return res

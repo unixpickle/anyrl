@@ -1,6 +1,12 @@
 package anyes
 
-import "time"
+import (
+	"time"
+
+	"github.com/unixpickle/anynet/anyrnn"
+	"github.com/unixpickle/anyrl"
+	"github.com/unixpickle/essentials"
+)
 
 // StopConds is a set of stopping conditions for an
 // environment rollout.
@@ -58,4 +64,101 @@ type Slave interface {
 	// adding a certain amount of noise for each of
 	// the given seeds.
 	Update(scales []float64, seeds []int64) error
+}
+
+// AnynetSlave is a Slave which works by running an RNN
+// block on a pre-determined environment.
+type AnynetSlave struct {
+	Params Params
+	Policy anyrnn.Block
+	Env    anyrl.Env
+
+	// Sampler, if non-nil, is applied to Policy outputs
+	// right before they are fed to the environment.
+	Sampler anyrl.Sampler
+
+	// Noise is set by Init.
+	Noise *Noise
+}
+
+// Init updates the parameters and initializes the noise
+// generator.
+func (a *AnynetSlave) Init(data []byte, seed int64, size int) (err error) {
+	defer essentials.AddCtxTo("init AnynetSlave", &err)
+
+	err = a.Params.SetData(data)
+	if err != nil {
+		return
+	}
+
+	a.Noise = NewNoise(seed, size)
+	return nil
+}
+
+// Run executes an environment rollout.
+func (a *AnynetSlave) Run(stop *StopConds, scale float64, seed int64) (r *Rollout,
+	err error) {
+	defer essentials.AddCtxTo("run AnynetSlave", &err)
+
+	oldData, err := a.Params.Data()
+	if err != nil {
+		return
+	}
+	defer func() {
+		if subErr := a.Params.SetData(oldData); err == nil {
+			err = subErr
+		}
+	}()
+	a.Params.Update(a.Noise.Gen(scale, seed, a.Params.Len()))
+
+	r = &Rollout{
+		Scale:     scale,
+		Seed:      seed,
+		EarlyStop: true,
+	}
+	obs, err := a.Env.Reset()
+	if err != nil {
+		return
+	}
+	state := a.Policy.Start(1)
+	var timeout <-chan time.Time
+	if stop.MaxTime != 0 {
+		timeout = time.After(stop.MaxTime)
+	}
+	for r.Steps < stop.MaxSteps || stop.MaxSteps == 0 {
+		select {
+		case <-timeout:
+			return
+		default:
+		}
+
+		out := a.Policy.Step(state, obs)
+		state = out.State()
+		action := out.Output()
+		if a.Sampler != nil {
+			action = a.Sampler.Sample(action, 1)
+		}
+
+		var rew float64
+		var done bool
+		obs, rew, done, err = a.Env.Step(action)
+		if err != nil {
+			return
+		}
+		r.Reward += rew
+		r.Steps++
+		if done {
+			r.EarlyStop = false
+			return
+		}
+	}
+	return
+}
+
+// Update updates the parameters by re-generating the
+// mutations and adding them.
+func (a *AnynetSlave) Update(scales []float64, seeds []int64) error {
+	vec := a.Noise.GenSum(scales, seeds, a.Params.Len())
+	a.Params.Update(vec)
+	return nil
 }
