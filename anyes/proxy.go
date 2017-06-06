@@ -95,9 +95,9 @@ func ProxyProvide(c io.ReadWriteCloser, s Slave) (err error) {
 			}
 		case packetRun:
 			rollout, err := s.Run(p.Stop, p.Scale, p.Seed)
-			packet := newPacketErr(err)
-			packet.Rollout = rollout
-			err = conn.Send(newPacketErr(err))
+			resP := newPacketErr(err)
+			resP.Rollout = rollout
+			err = conn.Send(resP)
 			if err != nil {
 				return err
 			}
@@ -137,10 +137,10 @@ func ProxyConsume(c io.ReadWriteCloser) (slave SlaveProxy, err error) {
 	rootConn := gobplexer.NetConnection(c)
 	res.closers = append(res.closers, rootConn)
 
-	connector := gobplexer.MultiplexConnector(rootConn)
-	res.closers = append(res.closers, connector)
+	listener := gobplexer.MultiplexListener(rootConn)
+	res.closers = append(res.closers, listener)
 
-	conn, err := gobplexer.KeepaliveConnector(connector, keepaliveInterval,
+	conn, err := gobplexer.KeepaliveListener(listener, keepaliveInterval,
 		keepaliveMaxDelay)
 	if err != nil {
 		res.Close()
@@ -194,7 +194,7 @@ func (s *slaveProxy) Run(sc *StopConds, scale float64, seed int64) (r *Rollout,
 func (s *slaveProxy) Update(scales []float64, seeds []int64) (err error) {
 	defer essentials.AddCtxTo("slave proxy update", &err)
 	return s.call(&packet{
-		Type:   packetInit,
+		Type:   packetUpdate,
 		Scales: scales,
 		Seeds:  seeds,
 	})

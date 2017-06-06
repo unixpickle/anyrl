@@ -39,6 +39,9 @@ type Rollout struct {
 }
 
 // A Slave is a slave node from a master's point of view.
+//
+// A Slave is not assumed to be thread-safe.
+// Only one Slave method can be running at once.
 type Slave interface {
 	// Init tells the slave about the initial model
 	// parameters and the pre-generated random noise.
