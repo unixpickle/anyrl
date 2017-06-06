@@ -20,11 +20,22 @@ type StopConds struct {
 // Rollout contains information about the result of
 // running an agent on an environment.
 type Rollout struct {
+	// Scale used to generate the rollout.
+	Scale int
+
+	// Seed used to generate the rollout.
+	Seed int64
+
 	// Reward is the cumulative reward.
 	Reward float64
 
 	// Steps is the number of steps taken.
 	Steps int
+
+	// EarlyStop is true if the rollout ended because
+	// of a stop condition rather than because of a
+	// terminal state.
+	EarlyStop bool
 }
 
 // A Slave is a slave node from a master's point of view.
