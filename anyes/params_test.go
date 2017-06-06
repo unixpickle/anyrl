@@ -8,9 +8,9 @@ import (
 	"github.com/unixpickle/anyvec/anyvec32"
 )
 
-func TestAnydiffParamsSerialize(t *testing.T) {
+func TestAnynetParamsSerialize(t *testing.T) {
 	cr := anyvec32.DefaultCreator{}
-	params := AnydiffParams{
+	params := AnynetParams{
 		Params: []*anydiff.Var{
 			{Vector: cr.MakeVectorData([]float32{1, 2, 3.5, -7})},
 			{Vector: cr.MakeVectorData([]float32{2, 1})},
@@ -21,7 +21,7 @@ func TestAnydiffParamsSerialize(t *testing.T) {
 		t.Error(err)
 	}
 
-	newParams := AnydiffParams{
+	newParams := AnynetParams{
 		Params: []*anydiff.Var{
 			{Vector: cr.MakeVectorData([]float32{0, 0, 0, 0})},
 			{Vector: cr.MakeVectorData([]float32{0, 0})},
@@ -36,9 +36,9 @@ func TestAnydiffParamsSerialize(t *testing.T) {
 	}
 }
 
-func TestAnydiffParamsUpdate(t *testing.T) {
+func TestAnynetParamsUpdate(t *testing.T) {
 	cr := anyvec32.DefaultCreator{}
-	params := AnydiffParams{
+	params := AnynetParams{
 		Params: []*anydiff.Var{
 			{Vector: cr.MakeVectorData([]float32{1, 2, 3.5, -7})},
 			{Vector: cr.MakeVectorData([]float32{2, 1})},
@@ -46,7 +46,7 @@ func TestAnydiffParamsUpdate(t *testing.T) {
 	}
 	params.Update([]float64{1, 2, 0.5, 1, 2, 3})
 
-	expected := AnydiffParams{
+	expected := AnynetParams{
 		Params: []*anydiff.Var{
 			{Vector: cr.MakeVectorData([]float32{2, 4, 4, -6})},
 			{Vector: cr.MakeVectorData([]float32{4, 4})},

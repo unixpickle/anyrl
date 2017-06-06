@@ -98,9 +98,9 @@ func (s *safeParams) Version() ParamVersion {
 	return s.version
 }
 
-// AnydiffParams is a Params implementation that operates
+// AnynetParams is a Params implementation that operates
 // on a list of *anydiff.Vars.
-type AnydiffParams struct {
+type AnynetParams struct {
 	Params []*anydiff.Var
 
 	// Transformer, if non-nil, is applied to the updates
@@ -118,7 +118,7 @@ type AnydiffParams struct {
 
 // Len returns the total number of parameters across all
 // the variables.
-func (a AnydiffParams) Len() int {
+func (a AnynetParams) Len() int {
 	var res int
 	for _, x := range a.Params {
 		res += x.Vector.Len()
@@ -127,8 +127,8 @@ func (a AnydiffParams) Len() int {
 }
 
 // Data serializes the vectors.
-func (a AnydiffParams) Data() (data []byte, err error) {
-	defer essentials.AddCtxTo("serialize AnydiffParams", &err)
+func (a AnynetParams) Data() (data []byte, err error) {
+	defer essentials.AddCtxTo("serialize AnynetParams", &err)
 
 	var args []interface{}
 	for _, v := range a.Params {
@@ -138,8 +138,8 @@ func (a AnydiffParams) Data() (data []byte, err error) {
 }
 
 // SetData deserializes data into the vectors.
-func (a AnydiffParams) SetData(d []byte) (err error) {
-	defer essentials.AddCtxTo("deserialize AnydiffParams", &err)
+func (a AnynetParams) SetData(d []byte) (err error) {
+	defer essentials.AddCtxTo("deserialize AnynetParams", &err)
 
 	dests := make([]interface{}, len(a.Params))
 	for i := range dests {
@@ -163,7 +163,7 @@ func (a AnydiffParams) SetData(d []byte) (err error) {
 
 // Update adds the mutation vector to the parameters by
 // splitting it up into sub-vectors for each variable.
-func (a AnydiffParams) Update(m []float64) {
+func (a AnynetParams) Update(m []float64) {
 	grad := anydiff.Grad{}
 	for _, v := range a.Params {
 		subVec := m[:v.Vector.Len()]
