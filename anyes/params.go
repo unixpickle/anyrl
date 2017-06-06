@@ -1,6 +1,15 @@
 package anyes
 
-import "sync"
+import (
+	"errors"
+	"sync"
+
+	"github.com/unixpickle/anydiff"
+	"github.com/unixpickle/anynet/anysgd"
+	"github.com/unixpickle/anyvec/anyvecsave"
+	"github.com/unixpickle/essentials"
+	"github.com/unixpickle/serializer"
+)
 
 // ParamVersion is a version number used by SafeParams.
 type ParamVersion int64
@@ -87,4 +96,91 @@ func (s *safeParams) Version() ParamVersion {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return s.version
+}
+
+// AnydiffParams is a Params implementation that operates
+// on a list of *anydiff.Vars.
+type AnydiffParams struct {
+	Params []*anydiff.Var
+
+	// Transformer, if non-nil, is applied to the updates
+	// before adding the updates to the variables.
+	Transformer anysgd.Transformer
+
+	// StepSize, if non-zero, is used to scale the updates
+	// right before applying them.
+	//
+	// Since certain types of Transformers are invariant
+	// to the magnitude of their inputs, the StepSize
+	// parameter might be necessary for those cases.
+	StepSize float64
+}
+
+// Len returns the total number of parameters across all
+// the variables.
+func (a AnydiffParams) Len() int {
+	var res int
+	for _, x := range a.Params {
+		res += x.Vector.Len()
+	}
+	return res
+}
+
+// Data serializes the vectors.
+func (a AnydiffParams) Data() (data []byte, err error) {
+	defer essentials.AddCtxTo("serialize AnydiffParams", &err)
+
+	var args []interface{}
+	for _, v := range a.Params {
+		args = append(args, &anyvecsave.S{Vector: v.Vector})
+	}
+	return serializer.SerializeAny(args...)
+}
+
+// SetData deserializes data into the vectors.
+func (a AnydiffParams) SetData(d []byte) (err error) {
+	defer essentials.AddCtxTo("deserialize AnydiffParams", &err)
+
+	dests := make([]interface{}, len(a.Params))
+	for i := range dests {
+		dests[i] = new(*anyvecsave.S)
+	}
+	if err := serializer.DeserializeAny(d, dests...); err != nil {
+		return err
+	}
+	for i, dest := range dests {
+		vec := (*dest.(**anyvecsave.S)).Vector
+		v := a.Params[i]
+		if vec.Len() != v.Vector.Len() {
+			return errors.New("length mismatch")
+		} else if vec.Creator() != v.Vector.Creator() {
+			return errors.New("creator mismatch")
+		}
+		v.Vector.Set(vec)
+	}
+	return nil
+}
+
+// Update adds the mutation vector to the parameters by
+// splitting it up into sub-vectors for each variable.
+func (a AnydiffParams) Update(m []float64) {
+	grad := anydiff.Grad{}
+	for _, v := range a.Params {
+		subVec := m[:v.Vector.Len()]
+		m = m[v.Vector.Len():]
+		cr := v.Vector.Creator()
+		grad[v] = cr.MakeVectorData(cr.MakeNumericList(subVec))
+	}
+	if len(m) > 0 {
+		panic("index out of bounds")
+	}
+	if a.Transformer != nil {
+		grad = a.Transformer.Transform(grad)
+	}
+	if a.StepSize != 0 {
+		for _, v := range grad {
+			v.Scale(v.Creator().MakeNumeric(a.StepSize))
+		}
+	}
+	grad.AddToVars()
 }
