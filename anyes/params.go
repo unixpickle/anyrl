@@ -101,10 +101,11 @@ func (s *safeParams) Version() ParamVersion {
 // AnynetParams is a Params implementation that operates
 // on a list of *anydiff.Vars.
 //
-// If you use a Transformer, then you should add all
-// Slaves to the Master before training any of them.
+// If you use a Transformer, then the transformer should
+// be stateless or implement anysgd.TransformMarshaler.
 // This way, the Transformer's internal state remains
-// consistent across Slaves.
+// consistent across Slaves, even if new Slaves connect
+// after some training has taken place.
 type AnynetParams struct {
 	Params []*anydiff.Var
 
@@ -139,6 +140,15 @@ func (a AnynetParams) Data() (data []byte, err error) {
 	for _, v := range a.Params {
 		args = append(args, &anyvecsave.S{Vector: v.Vector})
 	}
+	if a.Transformer != nil {
+		if t, ok := a.Transformer.(anysgd.TransformMarshaler); ok {
+			data, err := t.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, data)
+		}
+	}
 	return serializer.SerializeAny(args...)
 }
 
@@ -150,12 +160,18 @@ func (a AnynetParams) SetData(d []byte) (err error) {
 	for i := range dests {
 		dests[i] = new(*anyvecsave.S)
 	}
+	if a.Transformer != nil {
+		if _, ok := a.Transformer.(anysgd.TransformMarshaler); ok {
+			dests = append(dests, new([]byte))
+		}
+	}
+
 	if err := serializer.DeserializeAny(d, dests...); err != nil {
 		return err
 	}
-	for i, dest := range dests {
-		vec := (*dest.(**anyvecsave.S)).Vector
-		v := a.Params[i]
+
+	for i, v := range a.Params {
+		vec := (*dests[i].(**anyvecsave.S)).Vector
 		if vec.Len() != v.Vector.Len() {
 			return errors.New("length mismatch")
 		} else if vec.Creator() != v.Vector.Creator() {
@@ -163,6 +179,16 @@ func (a AnynetParams) SetData(d []byte) (err error) {
 		}
 		v.Vector.Set(vec)
 	}
+
+	if a.Transformer != nil {
+		if t, ok := a.Transformer.(anysgd.TransformMarshaler); ok {
+			data := *dests[len(dests)-1].(*[]byte)
+			if err := t.UnmarshalBinary(data); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
