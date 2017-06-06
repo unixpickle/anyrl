@@ -100,6 +100,11 @@ func (s *safeParams) Version() ParamVersion {
 
 // AnynetParams is a Params implementation that operates
 // on a list of *anydiff.Vars.
+//
+// If you use a Transformer, then you should add all
+// Slaves to the Master before training any of them.
+// This way, the Transformer's internal state remains
+// consistent across Slaves.
 type AnynetParams struct {
 	Params []*anydiff.Var
 

@@ -2,6 +2,15 @@ package anyes
 
 import "math"
 
+// MeanReward computes the mean reward for some rollouts.
+func MeanReward(r []*Rollout) float64 {
+	var sum float64
+	for _, x := range r {
+		sum += x.Reward
+	}
+	return sum / float64(len(r))
+}
+
 // normalize adjusts the values to have mean 0 and
 // variance 1.
 func normalize(vals []float64) {

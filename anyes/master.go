@@ -252,6 +252,7 @@ func (m *Master) Update(r []*Rollout) (err error) {
 
 	wg.Wait()
 
+	close(errChan)
 	return <-errChan
 }
 
