@@ -30,6 +30,23 @@ func (n *Noise) Gen(seed int64, amount int) []float64 {
 	return res
 }
 
+// GenSum generates multiple chunks of noise (given by the
+// seeds), scales each chunk by the corresponding scale,
+// and sums the result.
+func (n *Noise) GenSum(scales []float64, seeds []int64, amount int) []float64 {
+	if len(scales) != len(seeds) {
+		panic("mismatching number of scales and seeds")
+	}
+	res := make([]float64, amount)
+	for i, scale := range scales {
+		seed := seeds[i]
+		for i, x := range n.Gen(seed, amount) {
+			res[i] += scale * x
+		}
+	}
+	return res
+}
+
 // Seed returns the seed needed to create an identical
 // Noise with NewNoise().
 func (n *Noise) Seed() int64 {

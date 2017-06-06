@@ -103,7 +103,7 @@ func (m *Master) AddSlave(s Slave) (err error) {
 	return
 }
 
-// Rollouts gathers n rollouts from the Slaves.
+// Rollouts gathers 2*n rollouts from the Slaves.
 //
 // This blocks until all rollouts are finished or an error
 // occurs and is not handled by m.SlaveError.
@@ -115,8 +115,14 @@ func (m *Master) AddSlave(s Slave) (err error) {
 // results along with the first error encountered.
 //
 // The stopping conditions are used for every rollout.
+// If the stopping conditions are nil, the zero value is
+// used.
 func (m *Master) Rollouts(stop *StopConds, n int) (rollouts []*Rollout, err error) {
 	defer essentials.AddCtxTo("rollouts", &err)
+
+	if stop == nil {
+		stop = &StopConds{}
+	}
 
 	jobs := make(chan *scaleSeed, n*2)
 	for i := 0; i < n; i++ {
@@ -133,7 +139,7 @@ func (m *Master) Rollouts(stop *StopConds, n int) (rollouts []*Rollout, err erro
 	slaveAddedChan := m.getSlaveAdded()
 
 	var wg sync.WaitGroup
-	for len(rollouts) < n {
+	for len(rollouts) < n*2 {
 		assignments := m.assignJobs(jobs)
 
 		for _, assig := range assignments {
@@ -251,10 +257,8 @@ func (m *Master) localUpdate(scales []float64, seeds []int64) ParamVersion {
 	m.updateLock.Lock()
 	defer m.updateLock.Unlock()
 
-	// TODO: normalize rewards, compute weighted average,
-	// and add resulting sum.
-
-	panic("not yet implemented")
+	vec := m.Noise.GenSum(scales, seeds, m.Params.Len())
+	return m.Params.Update(vec)
 }
 
 // assignJobs assigns pending jobs to idle slaves.
@@ -288,7 +292,25 @@ func (m *Master) assignJobs(jobs chan *scaleSeed) []*jobAssignment {
 }
 
 func (m *Master) scalesAndSeeds(r []*Rollout) ([]float64, []int64) {
-	panic("not yet implemented")
+	var scales []float64
+	var seeds []int64
+	for _, rollout := range r {
+		scales = append(scales, rollout.Reward)
+		seeds = append(seeds, rollout.Seed)
+	}
+	if m.Normalize {
+		normalize(scales)
+	}
+
+	// We square m.NoiseStddev to cancel out the sigma
+	// from rollout.Scale as well as capture a 1/sigma
+	// from the original paper's formulation.
+	globalScale := m.StepSize / (m.NoiseStddev * m.NoiseStddev * float64(len(r)))
+
+	for i, rollout := range r {
+		scales[i] *= globalScale * rollout.Scale
+	}
+	return scales, seeds
 }
 
 func (m *Master) removeSlave(toRemove *managedSlave) {

@@ -21,7 +21,7 @@ type StopConds struct {
 // running an agent on an environment.
 type Rollout struct {
 	// Scale used to generate the rollout.
-	Scale int
+	Scale float64
 
 	// Seed used to generate the rollout.
 	Seed int64
