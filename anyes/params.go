@@ -124,7 +124,7 @@ type AnynetParams struct {
 
 // Len returns the total number of parameters across all
 // the variables.
-func (a AnynetParams) Len() int {
+func (a *AnynetParams) Len() int {
 	var res int
 	for _, x := range a.Params {
 		res += x.Vector.Len()
@@ -133,7 +133,7 @@ func (a AnynetParams) Len() int {
 }
 
 // Data serializes the vectors.
-func (a AnynetParams) Data() (data []byte, err error) {
+func (a *AnynetParams) Data() (data []byte, err error) {
 	defer essentials.AddCtxTo("serialize AnynetParams", &err)
 
 	var args []interface{}
@@ -153,7 +153,7 @@ func (a AnynetParams) Data() (data []byte, err error) {
 }
 
 // SetData deserializes data into the vectors.
-func (a AnynetParams) SetData(d []byte) (err error) {
+func (a *AnynetParams) SetData(d []byte) (err error) {
 	defer essentials.AddCtxTo("deserialize AnynetParams", &err)
 
 	dests := make([]interface{}, len(a.Params))
@@ -194,7 +194,23 @@ func (a AnynetParams) SetData(d []byte) (err error) {
 
 // Update adds the mutation vector to the parameters by
 // splitting it up into sub-vectors for each variable.
-func (a AnynetParams) Update(m []float64) {
+func (a *AnynetParams) Update(m []float64) {
+	grad := a.SplitMutation(m)
+	if a.Transformer != nil {
+		grad = a.Transformer.Transform(grad)
+	}
+	if a.StepSize != 0 {
+		for _, v := range grad {
+			v.Scale(v.Creator().MakeNumeric(a.StepSize))
+		}
+	}
+	grad.AddToVars()
+}
+
+// SplitMutation splits the mutation vector up into
+// separate vectors for each variable.
+// It does not apply the Transformer or use the StepSize.
+func (a *AnynetParams) SplitMutation(m []float64) anydiff.Grad {
 	grad := anydiff.Grad{}
 	for _, v := range a.Params {
 		subVec := m[:v.Vector.Len()]
@@ -205,13 +221,5 @@ func (a AnynetParams) Update(m []float64) {
 	if len(m) > 0 {
 		panic("index out of bounds")
 	}
-	if a.Transformer != nil {
-		grad = a.Transformer.Transform(grad)
-	}
-	if a.StepSize != 0 {
-		for _, v := range grad {
-			v.Scale(v.Creator().MakeNumeric(a.StepSize))
-		}
-	}
-	grad.AddToVars()
+	return grad
 }

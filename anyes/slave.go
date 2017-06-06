@@ -69,7 +69,7 @@ type Slave interface {
 // AnynetSlave is a Slave which works by running an RNN
 // block on a pre-determined environment.
 type AnynetSlave struct {
-	Params Params
+	Params *AnynetParams
 	Policy anyrnn.Block
 	Env    anyrl.Env
 
@@ -109,7 +109,8 @@ func (a *AnynetSlave) Run(stop *StopConds, scale float64, seed int64) (r *Rollou
 			err = subErr
 		}
 	}()
-	a.Params.Update(a.Noise.Gen(scale, seed, a.Params.Len()))
+	mutation := a.Noise.Gen(scale, seed, a.Params.Len())
+	a.Params.SplitMutation(mutation).AddToVars()
 
 	r = &Rollout{
 		Scale:     scale,
