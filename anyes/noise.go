@@ -4,29 +4,32 @@ import "math/rand"
 
 // Noise produces deterministic Gaussian noise.
 type Noise struct {
-	seed int64
-	data []float64
+	seed   int64
+	data   []float64
+	lenLog int
 }
 
 // NewNoise creates a noise generator with the given seed
 // and amount of pre-generated noise.
+//
+// The length argument must be a power of 2.
 func NewNoise(seed int64, length int) *Noise {
 	gen := rand.New(rand.NewSource(seed))
 	var data []float64
 	for i := 0; i < length; i++ {
 		data = append(data, gen.NormFloat64())
 	}
-	return &Noise{seed: seed, data: data}
+	return &Noise{seed: seed, data: data, lenLog: log2(length)}
 }
 
 // Gen generates a chunk of noise in a deterministic way
 // based on the given seed.
 // The noise is scaled by the given factor.
 func (n *Noise) Gen(scale float64, seed int64, amount int) []float64 {
-	gen := rand.New(rand.NewSource(seed))
+	source := rand.NewSource(seed)
 	res := make([]float64, amount)
-	for i := 0; i < amount; i++ {
-		res[i] = scale * n.data[gen.Intn(len(n.data))]
+	for i, sourceIdx := range n.randomIndices(source, amount) {
+		res[i] = scale * n.data[sourceIdx]
 	}
 	return res
 }
@@ -59,4 +62,31 @@ func (n *Noise) Seed() int64 {
 // with NewNoise().
 func (n *Noise) Len() int {
 	return len(n.data)
+}
+
+func (n *Noise) randomIndices(source rand.Source, size int) []int {
+	res := make([]int, 0, size+64)
+	mask := int64((1 << uint(n.lenLog)) - 1)
+
+	for len(res) < size {
+		next := source.Int63()
+		for remaining := 63; remaining >= n.lenLog; remaining -= n.lenLog {
+			res = append(res, int(next&mask))
+			next >>= uint(n.lenLog)
+		}
+	}
+
+	return res[:size]
+}
+
+func log2(n int) int {
+	for i := uint(0); i < 64; i++ {
+		exp := uint64(1) << i
+		if exp == uint64(n) {
+			return int(i)
+		} else if exp > uint64(n) {
+			break
+		}
+	}
+	panic("not a power of 2")
 }
