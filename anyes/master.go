@@ -1,7 +1,6 @@
 package anyes
 
 import (
-	"errors"
 	"math/rand"
 	"sync"
 
@@ -254,7 +253,7 @@ func (m *Master) Update(r []*Rollout) (err error) {
 			continue
 		} else if slave.Version != oldVerison {
 			m.slaveLock.RUnlock()
-			return errors.New("parameter version inconsistency")
+			panic("parameter version inconsistency")
 		}
 		wg.Add(1)
 		go func(slave *managedSlave) {
