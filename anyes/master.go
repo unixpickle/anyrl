@@ -226,19 +226,31 @@ func (m *Master) Rollouts(stop *StopConds, n int) (rollouts []*Rollout, err erro
 func (m *Master) Update(r []*Rollout) (err error) {
 	defer essentials.AddCtxTo("update", &err)
 
+	var wg sync.WaitGroup
+
 	scales, seeds := m.scalesAndSeeds(r)
 
 	oldVerison := m.Params.Version()
-	newVersion := m.localUpdate(scales, seeds)
+	gotNewVersion := make(chan struct{})
+	var newVersion ParamVersion
+
+	m.updateLock.Lock()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer m.updateLock.Unlock()
+		vec := m.Noise.GenSum(scales, seeds, m.Params.Len())
+		newVersion = m.Params.Update(vec)
+		close(gotNewVersion)
+	}()
 
 	errChan := make(chan error, 1)
 
-	var wg sync.WaitGroup
 	m.slaveLock.RLock()
 	for _, slave := range m.slaves {
 		if slave.Version == newVersion {
 			// Can happen if m.AddSlave added the slave
-			// right after localUpdate finished.
+			// right after the local update finished.
 			continue
 		} else if slave.Version != oldVerison {
 			m.slaveLock.RUnlock()
@@ -257,6 +269,7 @@ func (m *Master) Update(r []*Rollout) (err error) {
 					}
 				}
 			} else {
+				<-gotNewVersion
 				slave.Version = newVersion
 			}
 		}(slave)
@@ -267,14 +280,6 @@ func (m *Master) Update(r []*Rollout) (err error) {
 
 	close(errChan)
 	return <-errChan
-}
-
-func (m *Master) localUpdate(scales []float64, seeds []int64) ParamVersion {
-	m.updateLock.Lock()
-	defer m.updateLock.Unlock()
-
-	vec := m.Noise.GenSum(scales, seeds, m.Params.Len())
-	return m.Params.Update(vec)
 }
 
 // assignJobs assigns pending jobs to idle slaves.
