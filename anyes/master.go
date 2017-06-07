@@ -330,6 +330,8 @@ func (m *Master) scalesAndSeeds(r []*Rollout) ([]float64, []int64) {
 }
 
 func (m *Master) removeSlave(toRemove *managedSlave) {
+	m.slaveLock.Lock()
+	defer m.slaveLock.Unlock()
 	for i, s := range m.slaves {
 		if s == toRemove {
 			m.slaves[i] = m.slaves[len(m.slaves)-1]
