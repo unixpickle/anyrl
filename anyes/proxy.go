@@ -49,6 +49,9 @@ type packet struct {
 	Scales []float64
 	Seeds  []int64
 
+	// Used for update responses.
+	Checksum Checksum
+
 	// Used for all responses.
 	Err *string
 }
@@ -103,8 +106,10 @@ func ProxyProvide(c io.ReadWriteCloser, s Slave) (err error) {
 				return err
 			}
 		case packetUpdate:
-			err := s.Update(p.Scales, p.Seeds)
-			err = conn.Send(newPacketErr(err))
+			sum, err := s.Update(p.Scales, p.Seeds)
+			resP := newPacketErr(err)
+			resP.Checksum = sum
+			err = conn.Send(resP)
 			if err != nil {
 				return err
 			}
@@ -192,13 +197,24 @@ func (s *slaveProxy) Run(sc *StopConds, scale float64, seed int64) (r *Rollout,
 	return p.Rollout, nil
 }
 
-func (s *slaveProxy) Update(scales []float64, seeds []int64) (err error) {
+func (s *slaveProxy) Update(scales []float64, seeds []int64) (sum Checksum, err error) {
 	defer essentials.AddCtxTo("slave proxy update", &err)
-	return s.call(&packet{
+	p := &packet{
 		Type:   packetUpdate,
 		Scales: scales,
 		Seeds:  seeds,
-	})
+	}
+	if err := s.conn.Send(p); err != nil {
+		return 0, err
+	}
+	p, err = receivePacket(s.conn)
+	if err != nil {
+		return 0, err
+	}
+	if p.Err != nil {
+		return p.Checksum, errors.New(*p.Err)
+	}
+	return p.Checksum, nil
 }
 
 func (s *slaveProxy) call(p *packet) error {

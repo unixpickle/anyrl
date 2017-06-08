@@ -63,7 +63,8 @@ type Slave interface {
 	// Update computes a new set of parameters by
 	// adding a certain amount of noise for each of
 	// the given seeds.
-	Update(scales []float64, seeds []int64) error
+	// It returns a Checksum of the new parameters.
+	Update(scales []float64, seeds []int64) (Checksum, error)
 }
 
 // AnynetSlave is a Slave which works by running an RNN
@@ -158,8 +159,8 @@ func (a *AnynetSlave) Run(stop *StopConds, scale float64, seed int64) (r *Rollou
 
 // Update updates the parameters by re-generating the
 // mutations and adding them.
-func (a *AnynetSlave) Update(scales []float64, seeds []int64) error {
+func (a *AnynetSlave) Update(scales []float64, seeds []int64) (Checksum, error) {
 	vec := a.Noise.GenSum(scales, seeds, a.Params.Len())
 	a.Params.Update(vec)
-	return nil
+	return a.Params.Checksum()
 }

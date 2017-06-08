@@ -1,11 +1,14 @@
 package anyes
 
 import (
+	"errors"
 	"math/rand"
 	"sync"
 
 	"github.com/unixpickle/essentials"
 )
+
+var errIncorrectChecksum = errors.New("incorrect checksum")
 
 // A Master coordinates Slaves to train a model.
 //
@@ -225,13 +228,15 @@ func (m *Master) Rollouts(stop *StopConds, n int) (rollouts []*Rollout, err erro
 func (m *Master) Update(r []*Rollout) (err error) {
 	defer essentials.AddCtxTo("update", &err)
 
-	var wg sync.WaitGroup
-
 	scales, seeds := m.scalesAndSeeds(r)
-
 	oldVersion := m.Params.Version()
-	gotNewVersion := make(chan struct{})
+
+	var wg sync.WaitGroup
 	var newVersion ParamVersion
+	var newChecksum Checksum
+
+	doneLocalUpdate := make(chan struct{})
+	errChan := make(chan error, 1)
 
 	m.updateLock.Lock()
 	wg.Add(1)
@@ -240,10 +245,16 @@ func (m *Master) Update(r []*Rollout) (err error) {
 		defer m.updateLock.Unlock()
 		vec := m.Noise.GenSum(scales, seeds, m.Params.Len())
 		newVersion = m.Params.Update(vec)
-		close(gotNewVersion)
+		var err error
+		newChecksum, _, err = m.Params.Checksum()
+		if err != nil {
+			select {
+			case errChan <- err:
+			default:
+			}
+		}
+		close(doneLocalUpdate)
 	}()
-
-	errChan := make(chan error, 1)
 
 	m.slaveLock.RLock()
 	for _, slave := range m.slaves {
@@ -258,7 +269,16 @@ func (m *Master) Update(r []*Rollout) (err error) {
 		wg.Add(1)
 		go func(slave *managedSlave) {
 			defer wg.Done()
-			if err := slave.Slave.Update(scales, seeds); err != nil {
+			sum, err := slave.Slave.Update(scales, seeds)
+			if err == nil {
+				<-doneLocalUpdate
+				if sum != newChecksum {
+					err = errIncorrectChecksum
+				} else {
+					slave.Version = newVersion
+				}
+			}
+			if err != nil {
 				m.removeSlave(slave)
 				err = m.callSlaveError(slave.Slave, err)
 				if err != nil {
@@ -267,9 +287,6 @@ func (m *Master) Update(r []*Rollout) (err error) {
 					default:
 					}
 				}
-			} else {
-				<-gotNewVersion
-				slave.Version = newVersion
 			}
 		}(slave)
 	}

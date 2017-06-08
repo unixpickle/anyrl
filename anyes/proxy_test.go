@@ -72,7 +72,8 @@ func TestProxy(t *testing.T) {
 	}
 
 	slave.retErr = nil
-	err = proxy.Update([]float64{1, 2, 3}, []int64{4, 5, 6})
+	slave.retChecksum = 15
+	sum, err := proxy.Update([]float64{1, 2, 3}, []int64{4, 5, 6})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,9 +81,13 @@ func TestProxy(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	if !reflect.DeepEqual(slave.retChecksum, sum) {
+		t.Errorf("expected checksum %v but got %v", slave.retChecksum, sum)
+	}
 
 	slave.retErr = errors.New("update, world!")
-	err = verifyError(slave, proxy.Update([]float64{1, 2, 3}, []int64{4, 5, 6}))
+	_, err = proxy.Update([]float64{1, 2, 3}, []int64{4, 5, 6})
+	err = verifyError(slave, err)
 	if err != nil {
 		t.Error(err)
 	}
@@ -105,9 +110,10 @@ func verifyArgs(slave *testSlave, args ...interface{}) error {
 }
 
 type testSlave struct {
-	lastArgs   []interface{}
-	retErr     error
-	retRollout *Rollout
+	lastArgs    []interface{}
+	retErr      error
+	retRollout  *Rollout
+	retChecksum Checksum
 }
 
 func (t *testSlave) Init(a1 []byte, a2 int64, a3 int) error {
@@ -120,9 +126,9 @@ func (t *testSlave) Run(a1 *StopConds, a2 float64, a3 int64) (*Rollout, error) {
 	return t.retRollout, t.retErr
 }
 
-func (t *testSlave) Update(a1 []float64, a2 []int64) error {
+func (t *testSlave) Update(a1 []float64, a2 []int64) (Checksum, error) {
 	t.lastArgs = []interface{}{a1, a2}
-	return t.retErr
+	return t.retChecksum, t.retErr
 }
 
 func bidirPipe() (*readerWriter, *readerWriter) {

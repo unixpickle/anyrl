@@ -1,6 +1,7 @@
 package anyes
 
 import (
+	"crypto/md5"
 	"errors"
 	"sync"
 
@@ -13,6 +14,13 @@ import (
 
 // ParamVersion is a version number used by SafeParams.
 type ParamVersion int64
+
+// Checksum is a set of bits identifying some parameters.
+// If two sets of parameters are the same, their Checksums
+// should match.
+// If they are different, there should be a low chance
+// that the Checksums match.
+type Checksum uint64
 
 // Params is an abstract set of model parameters.
 // It is not thread-safe.
@@ -31,6 +39,10 @@ type Params interface {
 	// Update adjusts the parameters by adding the given
 	// mutation vector.
 	Update(mutation []float64)
+
+	// Checksum generates a checksum for the current set
+	// of parameters.
+	Checksum() (Checksum, error)
 }
 
 // SafeParams is a versioned, thread-safe set of model
@@ -47,6 +59,7 @@ type SafeParams interface {
 	Data() ([]byte, ParamVersion, error)
 	SetData(d []byte) (ParamVersion, error)
 	Update(mutation []float64) ParamVersion
+	Checksum() (Checksum, ParamVersion, error)
 	Version() ParamVersion
 }
 
@@ -90,6 +103,13 @@ func (s *safeParams) Update(m []float64) ParamVersion {
 	s.params.Update(m)
 	s.version++
 	return s.version
+}
+
+func (s *safeParams) Checksum() (Checksum, ParamVersion, error) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	check, err := s.params.Checksum()
+	return check, s.version, err
 }
 
 func (s *safeParams) Version() ParamVersion {
@@ -205,6 +225,21 @@ func (a *AnynetParams) Update(m []float64) {
 		}
 	}
 	grad.AddToVars()
+}
+
+// Checksum computes a checksum by hashing the data
+// produced by SetData().
+func (a *AnynetParams) Checksum() (ch Checksum, err error) {
+	defer essentials.AddCtxTo("checksum AnynetParams", &err)
+	data, err := a.Data()
+	if err != nil {
+		return
+	}
+	hash := md5.Sum(data)
+	for i := uint(0); i < 8; i++ {
+		ch |= Checksum(hash[i]) << (i * 8)
+	}
+	return
 }
 
 // SplitMutation splits the mutation vector up into
