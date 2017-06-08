@@ -96,8 +96,7 @@ func (a *AnynetSlave) Init(data []byte, seed int64, size int) (err error) {
 	if a.NoiseGroup == nil {
 		a.NoiseGroup = &NoiseGroup{}
 	}
-	a.NoiseGroup.Init(seed, size)
-	return nil
+	return a.NoiseGroup.Init(seed, size)
 }
 
 // Run executes an environment rollout.

@@ -1,6 +1,7 @@
 package anyes
 
 import (
+	"errors"
 	"math/rand"
 	"reflect"
 	"sync"
@@ -110,16 +111,17 @@ type NoiseGroup struct {
 // Init initializes the group.
 // If it is called multiple times, all later calls must
 // have the same arguments as the first one.
-func (n *NoiseGroup) Init(seed int64, length int) {
+func (n *NoiseGroup) Init(seed int64, length int) error {
 	n.lock.Lock()
 	defer n.lock.Unlock()
 	if n.noise == nil {
 		n.noise = NewNoise(seed, length)
 	} else {
 		if n.noise.Seed() != seed || n.noise.Len() != length {
-			panic("different noise arguments on same NoiseGroup")
+			return errors.New("init NoiseGroup: different inputs")
 		}
 	}
+	return nil
 }
 
 // Gen generates noise without caching.
