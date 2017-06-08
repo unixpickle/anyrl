@@ -339,10 +339,22 @@ func (m *Master) scalesAndSeeds(r []*Rollout) ([]float64, []int64) {
 		normalize(scales)
 	}
 
-	// We square m.NoiseStddev to cancel out the sigma
-	// from rollout.Scale as well as capture a 1/sigma
-	// from the original paper's formulation.
-	globalScale := m.StepSize / (m.NoiseStddev * m.NoiseStddev * float64(len(r)))
+	// Divide by m.NoiseStddev to cancel out the sigma
+	// from rollout.Scale.
+	globalScale := m.StepSize / (m.NoiseStddev * float64(len(r)))
+
+	if !m.Normalize {
+		// Capture the 1/sigma from the paper.
+		// This term scales the update to be the actual
+		// gradient of the mean reward.
+		// It can be thought of as the numerator in a
+		// finite differences formula.
+		//
+		// This doesn't make sense if we normalized the
+		// reward already, since the normalized reward
+		// won't change proportionately to sigma.
+		globalScale /= m.NoiseStddev
+	}
 
 	for i, rollout := range r {
 		scales[i] *= globalScale * rollout.Scale
