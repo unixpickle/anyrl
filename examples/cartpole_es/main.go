@@ -51,6 +51,7 @@ func main() {
 	}
 
 	// Setup slaves for Evolution Strategies.
+	group := &anyes.NoiseGroup{}
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		// Connect to gym server.
 		client, err := gym.Make(Host, "CartPole-v0")
@@ -68,9 +69,10 @@ func main() {
 			Params: &anyes.AnynetParams{
 				Params: anynet.AllParameters(newPolicy),
 			},
-			Policy:  newPolicy.(anyrnn.Block),
-			Env:     env,
-			Sampler: actionSampler,
+			Policy:     newPolicy.(anyrnn.Block),
+			Env:        env,
+			Sampler:    actionSampler,
+			NoiseGroup: group,
 		}
 		must(master.AddSlave(slave))
 	}

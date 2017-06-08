@@ -1,6 +1,10 @@
 package anyes
 
-import "math/rand"
+import (
+	"math/rand"
+	"reflect"
+	"sync"
+)
 
 // Noise produces deterministic Gaussian noise.
 type Noise struct {
@@ -89,4 +93,63 @@ func log2(n int) int {
 		}
 	}
 	panic("not a power of 2")
+}
+
+// A NoiseGroup wraps a Noise instance and caches results
+// so that multiple slaves on one machine can utilize the
+// same generated noise.
+type NoiseGroup struct {
+	lock     sync.Mutex
+	noise    *Noise
+	scales   []float64
+	seeds    []int64
+	amount   int
+	doneChan chan []float64
+}
+
+// Init initializes the group.
+// If it is called multiple times, all later calls must
+// have the same arguments as the first one.
+func (n *NoiseGroup) Init(seed int64, length int) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	if n.noise == nil {
+		n.noise = NewNoise(seed, length)
+	} else {
+		if n.noise.Seed() != seed || n.noise.Len() != length {
+			panic("different noise arguments on same NoiseGroup")
+		}
+	}
+}
+
+// Gen generates noise without caching.
+func (n *NoiseGroup) Gen(scale float64, seed int64, amount int) []float64 {
+	return n.noise.Gen(scale, seed, amount)
+}
+
+// GenSum generates a linear combination of noise vectors
+// with caching.
+//
+// The returned noise is a copy of the cache, so the
+// caller may modify it at will.
+func (n *NoiseGroup) GenSum(scales []float64, seeds []int64, amount int) []float64 {
+	n.lock.Lock()
+	if n.amount == amount && reflect.DeepEqual(n.scales, scales) &&
+		reflect.DeepEqual(n.seeds, seeds) {
+		ch := n.doneChan
+		n.lock.Unlock()
+		res := <-ch
+		ch <- res
+		return append([]float64{}, res...)
+	} else {
+		ch := make(chan []float64, 1)
+		n.scales = scales
+		n.seeds = seeds
+		n.amount = amount
+		n.doneChan = ch
+		n.lock.Unlock()
+		res := n.noise.GenSum(scales, seeds, amount)
+		ch <- append([]float64{}, res...)
+		return res
+	}
 }

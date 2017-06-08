@@ -78,8 +78,9 @@ type AnynetSlave struct {
 	// right before they are fed to the environment.
 	Sampler anyrl.Sampler
 
-	// Noise is set by Init.
-	Noise *Noise
+	// NoiseGroup is used to generate noise.
+	// If it is nil, Init sets it.
+	NoiseGroup *NoiseGroup
 }
 
 // Init updates the parameters and initializes the noise
@@ -92,7 +93,10 @@ func (a *AnynetSlave) Init(data []byte, seed int64, size int) (err error) {
 		return
 	}
 
-	a.Noise = NewNoise(seed, size)
+	if a.NoiseGroup == nil {
+		a.NoiseGroup = &NoiseGroup{}
+	}
+	a.NoiseGroup.Init(seed, size)
 	return nil
 }
 
@@ -110,7 +114,7 @@ func (a *AnynetSlave) Run(stop *StopConds, scale float64, seed int64) (r *Rollou
 			err = subErr
 		}
 	}()
-	mutation := a.Noise.Gen(scale, seed, a.Params.Len())
+	mutation := a.NoiseGroup.Gen(scale, seed, a.Params.Len())
 	a.Params.SplitMutation(mutation).AddToVars()
 
 	r = &Rollout{
@@ -160,7 +164,7 @@ func (a *AnynetSlave) Run(stop *StopConds, scale float64, seed int64) (r *Rollou
 // Update updates the parameters by re-generating the
 // mutations and adding them.
 func (a *AnynetSlave) Update(scales []float64, seeds []int64) (Checksum, error) {
-	vec := a.Noise.GenSum(scales, seeds, a.Params.Len())
+	vec := a.NoiseGroup.GenSum(scales, seeds, a.Params.Len())
 	a.Params.Update(vec)
 	return a.Params.Checksum()
 }
