@@ -229,7 +229,7 @@ func (m *Master) Update(r []*Rollout) (err error) {
 
 	scales, seeds := m.scalesAndSeeds(r)
 
-	oldVerison := m.Params.Version()
+	oldVersion := m.Params.Version()
 	gotNewVersion := make(chan struct{})
 	var newVersion ParamVersion
 
@@ -247,11 +247,11 @@ func (m *Master) Update(r []*Rollout) (err error) {
 
 	m.slaveLock.RLock()
 	for _, slave := range m.slaves {
-		if slave.Version == newVersion {
+		if slave.Version > oldVersion {
 			// Can happen if m.AddSlave added the slave
 			// right after the local update finished.
 			continue
-		} else if slave.Version != oldVerison {
+		} else if slave.Version < oldVersion {
 			m.slaveLock.RUnlock()
 			panic("parameter version inconsistency")
 		}
