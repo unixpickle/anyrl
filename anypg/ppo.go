@@ -54,29 +54,66 @@ type PPO struct {
 	Epsilon float64
 }
 
+// Advantage computes the GAE estimator for a batch.
+//
+// You should call this once per batch.
+// You should not call it between training steps in the
+// same batch, since the advantage estimator will change
+// as the value function is trained.
+func (p *PPO) Advantage(r *anyrl.RolloutSet) lazyseq.Tape {
+	first := <-r.Inputs.ReadTape(0, -1)
+	if first == nil {
+		tape, w := lazyseq.ReferenceTape()
+		close(w)
+		return tape
+	}
+
+	criticOut := p.Critic(p.applyBase(first.Packed.Creator(), r))
+
+	estimatedValues := make([][]float64, len(r.Rewards))
+	for outBatch := range criticOut.Forward() {
+		comps := vectorToComponents(outBatch.Packed)
+		for i, pres := range outBatch.Present {
+			if pres {
+				estimatedValues[i] = append(estimatedValues[i], comps[0])
+				comps = comps[1:]
+			}
+		}
+	}
+
+	var res [][]float64
+	for i, rewSeq := range r.Rewards {
+		valSeq := estimatedValues[i]
+		advantages := make([]float64, len(rewSeq))
+		var accumulation float64
+		for t := len(rewSeq) - 1; t >= 0; t-- {
+			delta := rewSeq[t] - valSeq[t]
+			if t+1 < len(rewSeq) {
+				delta += p.Discount * valSeq[t+1]
+			}
+			accumulation *= p.Discount * p.Lambda
+			accumulation += delta
+			advantages[t] = accumulation
+		}
+		res = append(res, advantages)
+	}
+
+	return anyrl.Rewards(res).Tape(criticOut.Creator())
+}
+
 // Run computes the gradient for a PPO step.
 //
 // This may be called multiple times per batch to fully
 // maximize the objective.
-func (p *PPO) Run(r *anyrl.RolloutSet) anydiff.Grad {
+func (p *PPO) Run(r *anyrl.RolloutSet, advantage lazyseq.Tape) anydiff.Grad {
 	grad := anydiff.NewGrad(p.Params...)
 	if len(grad) == 0 {
 		return grad
 	}
 	c := creatorFromGrad(grad)
 
-	var baseOut lazyseq.Reuser
-	if p.Base == nil {
-		baseOut = lazyseq.MakeReuser(lazyseq.TapeRereader(c, r.Inputs))
-	} else {
-		baseOut = lazyseq.MakeReuser(p.Base(lazyseq.TapeRereader(c, r.Inputs)))
-	}
-
-	criticOut := lazyseq.MakeReuser(p.Critic(baseOut))
-	advantage := p.advantage(criticOut, r.Rewards)
-	criticOut.Reuse()
-	baseOut.Reuse()
-	actorOut := p.Actor(baseOut)
+	criticOut := p.Critic(p.applyBase(c, r))
+	actorOut := p.Actor(p.applyBase(c, r))
 
 	targetValues := (&QJudger{Discount: p.Discount}).JudgeActions(r)
 
@@ -123,36 +160,13 @@ func (p *PPO) Run(r *anyrl.RolloutSet) anydiff.Grad {
 	return grad
 }
 
-func (p *PPO) advantage(criticOut lazyseq.Seq, r anyrl.Rewards) lazyseq.Tape {
-	estimatedValues := make([][]float64, len(r))
-	for outBatch := range criticOut.Forward() {
-		comps := vectorToComponents(outBatch.Packed)
-		for i, pres := range outBatch.Present {
-			if pres {
-				estimatedValues[i] = append(estimatedValues[i], comps[0])
-				comps = comps[1:]
-			}
-		}
+func (p *PPO) applyBase(c anyvec.Creator, r *anyrl.RolloutSet) lazyseq.Reuser {
+	if p.Base == nil {
+		return lazyseq.MakeReuser(lazyseq.TapeRereader(c, r.Inputs))
+	} else {
+		return lazyseq.MakeReuser(p.Base(lazyseq.TapeRereader(c, r.Inputs)))
 	}
 
-	var res [][]float64
-	for i, rewSeq := range r {
-		valSeq := estimatedValues[i]
-		advantages := make([]float64, len(rewSeq))
-		var accumulation float64
-		for t := len(rewSeq) - 1; t >= 0; t-- {
-			delta := rewSeq[t] - valSeq[t]
-			if t+1 < len(rewSeq) {
-				delta += p.Discount * valSeq[t+1]
-			}
-			accumulation *= p.Discount * p.Lambda
-			accumulation += delta
-			advantages[t] = accumulation
-		}
-		res = append(res, advantages)
-	}
-
-	return anyrl.Rewards(res).Tape(criticOut.Creator())
 }
 
 func (p *PPO) clippedObjective(ratios, advantages anydiff.Res) anydiff.Res {

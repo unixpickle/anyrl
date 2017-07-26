@@ -16,7 +16,7 @@ import (
 const (
 	Host             = "localhost:5001"
 	RolloutsPerBatch = 30
-	BatchEpochs      = 5
+	BatchEpochs      = 10
 	NumBatches       = 50
 
 	// Set to true if you want to watch the AI learn.
@@ -98,8 +98,9 @@ func main() {
 		log.Printf("batch %d: mean_reward=%f", batchIdx, r.Rewards.Mean())
 
 		// Train on the rollouts.
+		adv := ppo.Advantage(r)
 		for i := 0; i < BatchEpochs; i++ {
-			grad := ppo.Run(r)
+			grad := ppo.Run(r, adv)
 			g := transformer.Transform(grad)
 			g.Scale(creator.MakeNumeric(stepSize))
 			g.AddToVars()
