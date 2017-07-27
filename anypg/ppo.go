@@ -2,12 +2,24 @@ package anypg
 
 import (
 	"github.com/unixpickle/anydiff"
+	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyseq"
 )
 
 const DefaultPPOEpsilon = 0.2
+
+// PPOTerms represents the current value of the surrogate
+// PPO objective function in terms of the advantage,
+// critic, and regularization terms.
+// The sum of the three terms exactly represents the
+// objective function.
+type PPOTerms struct {
+	MeanAdvantage      anyvec.Numeric
+	MeanCritic         anyvec.Numeric
+	MeanRegularization anyvec.Numeric
+}
 
 // PPO implements Proximal Policy Optimization.
 // See https://arxiv.org/abs/1707.06347.
@@ -102,13 +114,18 @@ func (p *PPO) Advantage(r *anyrl.RolloutSet) lazyseq.Tape {
 }
 
 // Run computes the gradient for a PPO step.
+// It takes a batch of rollouts and the precomputed
+// advantages for that batch.
 //
 // This may be called multiple times per batch to fully
 // maximize the objective.
-func (p *PPO) Run(r *anyrl.RolloutSet, advantage lazyseq.Tape) anydiff.Grad {
+//
+// If p.Params is empty, then an empty gradient and nil
+// PPOTerms are returned.
+func (p *PPO) Run(r *anyrl.RolloutSet, adv lazyseq.Tape) (anydiff.Grad, *PPOTerms) {
 	grad := anydiff.NewGrad(p.Params...)
 	if len(grad) == 0 {
-		return grad
+		return grad, nil
 	}
 	c := creatorFromGrad(grad)
 
@@ -123,41 +140,51 @@ func (p *PPO) Run(r *anyrl.RolloutSet, advantage lazyseq.Tape) anydiff.Grad {
 			oldOuts, actions := v[2], v[3]
 			advantage, targets := v[4], v[5]
 
-			criticCoeff := -1.0
-			if p.CriticWeight != 0 {
-				criticCoeff *= p.CriticWeight
-			}
-			criticCost := anydiff.Scale(
-				anydiff.Square(anydiff.Sub(critic, targets)),
-				c.MakeNumeric(criticCoeff),
-			)
-
-			rat := anydiff.Exp(
+			ratios := anydiff.Exp(
 				anydiff.Sub(
 					p.ActionSpace.LogProb(actor, actions.Output(), n),
 					p.ActionSpace.LogProb(oldOuts, actions.Output(), n),
 				),
 			)
+			advTerm := p.clippedObjective(ratios, advantage)
 
-			obj := anydiff.Add(p.clippedObjective(rat, advantage), criticCost)
+			criticCoeff := -1.0
+			if p.CriticWeight != 0 {
+				criticCoeff *= p.CriticWeight
+			}
+			criticTerm := anydiff.Scale(
+				anydiff.Square(anydiff.Sub(critic, targets)),
+				c.MakeNumeric(criticCoeff),
+			)
+
+			var regTerm anydiff.Res
 			if p.Regularizer != nil {
-				regTerm := p.Regularizer.Regularize(actor, n)
-				obj = anydiff.Add(obj, regTerm)
+				regTerm = p.Regularizer.Regularize(actor, n)
+			} else {
+				regTerm = anydiff.NewConst(c.MakeVector(n))
 			}
 
-			return obj
+			cm := anynet.ConcatMixer{}
+			return cm.Mix(cm.Mix(advTerm, criticTerm, n), regTerm, n)
 		},
 		actorOut,
 		criticOut,
 		lazyseq.TapeRereader(c, r.AgentOuts),
 		lazyseq.TapeRereader(c, r.Actions),
-		lazyseq.TapeRereader(c, advantage),
+		lazyseq.TapeRereader(c, adv),
 		lazyseq.TapeRereader(c, targetValues.Tape(c)),
 	)
 
 	objective := lazyseq.Mean(obj)
-	objective.Propagate(anyvec.Ones(c, 1), grad)
-	return grad
+	objective.Propagate(anyvec.Ones(c, 3), grad)
+
+	terms := &PPOTerms{
+		MeanAdvantage:      anyvec.Sum(objective.Output().Slice(0, 1)),
+		MeanCritic:         anyvec.Sum(objective.Output().Slice(1, 2)),
+		MeanRegularization: anyvec.Sum(objective.Output().Slice(2, 3)),
+	}
+
+	return grad, terms
 }
 
 func (p *PPO) applyBase(c anyvec.Creator, r *anyrl.RolloutSet) lazyseq.Reuser {

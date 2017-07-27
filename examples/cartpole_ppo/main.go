@@ -100,7 +100,7 @@ func main() {
 		// Train on the rollouts.
 		adv := ppo.Advantage(r)
 		for i := 0; i < BatchEpochs; i++ {
-			grad := ppo.Run(r, adv)
+			grad, _ := ppo.Run(r, adv)
 			g := transformer.Transform(grad)
 			g.Scale(creator.MakeNumeric(stepSize))
 			g.AddToVars()
