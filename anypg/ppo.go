@@ -61,7 +61,7 @@ type PPO struct {
 // same batch, since the advantage estimator will change
 // as the value function is trained.
 func (p *PPO) Advantage(r *anyrl.RolloutSet) lazyseq.Tape {
-	first := <-r.Inputs.ReadTape(0, -1)
+	first := <-r.Inputs.ReadTape(0, 1)
 	if first == nil {
 		tape, w := lazyseq.ReferenceTape()
 		close(w)
