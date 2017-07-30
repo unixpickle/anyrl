@@ -79,7 +79,7 @@ func (k *KLReg) Regularize(params anydiff.Res, batchSize int) anydiff.Res {
 	anyvec.AddRepeated(repeatedBase, k.Base)
 	return anydiff.Scale(
 		k.KLer.KL(anydiff.NewConst(repeatedBase), params, batchSize),
-		c.MakeNumeric(-1),
+		c.MakeNumeric(-k.Coeff),
 	)
 }
 
