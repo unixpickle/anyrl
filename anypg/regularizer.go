@@ -56,6 +56,33 @@ func (i *InvEntropyReg) Regularize(params anydiff.Res, batchSize int) anydiff.Re
 	return anydiff.Scale(recip, c.MakeNumeric(-i.Coeff))
 }
 
+// KLReg regularizes using the negative KL divergence
+// between some base distribution and the actual one.
+//
+// With this regularization scheme, it is ensured that the
+// actions from the base distribution don't become too
+// unlikely.
+type KLReg struct {
+	KLer anyrl.KLer
+
+	// Base is the parameters of the base distribution.
+	Base anyvec.Vector
+
+	// Coeff controls the strength of the regularizer.
+	Coeff float64
+}
+
+// Regularize produces the negative KL divergence.
+func (k *KLReg) Regularize(params anydiff.Res, batchSize int) anydiff.Res {
+	c := params.Output().Creator()
+	repeatedBase := c.MakeVector(params.Output().Len())
+	anyvec.AddRepeated(repeatedBase, k.Base)
+	return anydiff.Scale(
+		k.KLer.KL(anydiff.NewConst(repeatedBase), params, batchSize),
+		c.MakeNumeric(-1),
+	)
+}
+
 // AverageReg computes the average regularization term
 // across all rollouts.
 func AverageReg(c anyvec.Creator, agentOuts lazyseq.Tape,
