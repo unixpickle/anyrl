@@ -42,6 +42,23 @@ func TestQJudgerDiscounted(t *testing.T) {
 	testRewardsEquiv(t, actual, expected)
 }
 
+func TestQJudgerNormalized(t *testing.T) {
+	rewards := [][]float64{
+		{1, 0.5, 2},
+		{},
+		{0.5, -1},
+	}
+
+	actual := (&QJudger{Normalize: true}).JudgeActions(&anyrl.RolloutSet{Rewards: rewards})
+	expected := [][]float64{
+		{1.257656291045065, 0.685994340570035, 0.400163365332521},
+		{},
+		{-1.028991510855053, -1.314822486092568},
+	}
+
+	testRewardsEquiv(t, actual, expected)
+}
+
 func TestTotalJudger(t *testing.T) {
 	rewards := [][]float64{
 		{1, 2, 3, 1},

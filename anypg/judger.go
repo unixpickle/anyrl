@@ -24,6 +24,18 @@ type QJudger struct {
 	//
 	// If 0, no discount is used.
 	Discount float64
+
+	// Normalize, if true, indicates that the resulting
+	// Q-values should be statistically normalized.
+	Normalize bool
+
+	// Epsilon is a small fudge factor used to prevent
+	// numerical issues when dividing by the standard
+	// deviation.
+	// It is only needed if Normalize is true.
+	//
+	// If this is 0, a reasonably small value is used.
+	Epsilon float64
 }
 
 // JudgeActions transforms the rewards so that each reward
@@ -43,6 +55,14 @@ func (q *QJudger) JudgeActions(r *anyrl.RolloutSet) anyrl.Rewards {
 		}
 		res = append(res, newSeq)
 	}
+
+	if q.Normalize {
+		normalized := flattenRewards(res)
+		tj := &TotalJudger{Normalize: q.Normalize, Epsilon: q.Epsilon}
+		tj.normalize(normalized)
+		unflattenRewards(res, normalized)
+	}
+
 	return res
 }
 
@@ -119,5 +139,24 @@ func (t *TotalJudger) normalize(rewards []float64) {
 	normalizer := 1 / (math.Sqrt(variance) + epsilon)
 	for i := range rewards {
 		rewards[i] *= normalizer
+	}
+}
+
+func flattenRewards(r anyrl.Rewards) []float64 {
+	var values []float64
+	for _, seq := range r {
+		for _, x := range seq {
+			values = append(values, x)
+		}
+	}
+	return values
+}
+
+func unflattenRewards(output anyrl.Rewards, flat []float64) {
+	for _, seq := range output {
+		for i := range seq {
+			seq[i] = flat[0]
+			flat = flat[1:]
+		}
 	}
 }
