@@ -82,44 +82,16 @@ type PPO struct {
 // same batch, since the advantage estimator will change
 // as the value function is trained.
 func (p *PPO) Advantage(r *anyrl.RolloutSet) lazyseq.Tape {
-	first := <-r.Inputs.ReadTape(0, 1)
-	if first == nil {
-		tape, w := lazyseq.ReferenceTape()
-		close(w)
-		return tape
+	var creator anyvec.Creator
+	judger := &GAEJudger{
+		ValueFunc: func(seq lazyseq.Rereader) <-chan *anyseq.Batch {
+			creator = seq.Creator()
+			return p.Critic(p.applyBase(seq.Creator(), r)).Forward()
+		},
+		Discount: p.Discount,
+		Lambda:   p.Lambda,
 	}
-
-	criticOut := p.Critic(p.applyBase(first.Packed.Creator(), r))
-
-	estimatedValues := make([][]float64, len(r.Rewards))
-	for outBatch := range criticOut.Forward() {
-		comps := vectorToComponents(outBatch.Packed)
-		for i, pres := range outBatch.Present {
-			if pres {
-				estimatedValues[i] = append(estimatedValues[i], comps[0])
-				comps = comps[1:]
-			}
-		}
-	}
-
-	var res [][]float64
-	for i, rewSeq := range r.Rewards {
-		valSeq := estimatedValues[i]
-		advantages := make([]float64, len(rewSeq))
-		var accumulation float64
-		for t := len(rewSeq) - 1; t >= 0; t-- {
-			delta := rewSeq[t] - valSeq[t]
-			if t+1 < len(rewSeq) {
-				delta += p.Discount * valSeq[t+1]
-			}
-			accumulation *= p.Discount * p.Lambda
-			accumulation += delta
-			advantages[t] = accumulation
-		}
-		res = append(res, advantages)
-	}
-
-	return anyrl.Rewards(res).Tape(criticOut.Creator())
+	return judger.JudgeActions(r).Tape(creator)
 }
 
 // Run computes the gradient for a PPO step.
@@ -237,19 +209,4 @@ func (p *PPO) clippedObjective(ratios, advantages anydiff.Res) anydiff.Res {
 			anydiff.Mul(ratios, advantages),
 		)
 	})
-}
-
-func vectorToComponents(vec anyvec.Vector) []float64 {
-	switch data := vec.Data().(type) {
-	case []float32:
-		res := make([]float64, len(data))
-		for i, x := range data {
-			res[i] = float64(x)
-		}
-		return res
-	case []float64:
-		return data
-	default:
-		panic("unsupported numeric type")
-	}
 }

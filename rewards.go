@@ -20,6 +20,9 @@ func PackRewards(r []Rewards) Rewards {
 }
 
 // Tape converts the reward sequences to a lazyseq.Tape.
+//
+// If all the reward sequences are empty, then c is never
+// used and may be nil.
 func (r Rewards) Tape(c anyvec.Creator) lazyseq.Tape {
 	res, writer := lazyseq.ReferenceTape()
 

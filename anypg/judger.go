@@ -3,7 +3,10 @@ package anypg
 import (
 	"math"
 
+	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anyrl"
+	"github.com/unixpickle/anyvec"
+	"github.com/unixpickle/lazyseq"
 )
 
 // An ActionJudger generates a signal indicating how
@@ -142,6 +145,68 @@ func (t *TotalJudger) normalize(rewards []float64) {
 	}
 }
 
+// A GAEJudger uses Generalized Advantage Estimation to
+// judge actions based on the predictions from a value
+// estimator.
+//
+// For more on GAE, see: https://arxiv.org/abs/1506.02438.
+type GAEJudger struct {
+	// ValueFunc takes a batch of observation sequences
+	// and produces a batch of value sequences.
+	// It can assume that the resulting channel will be
+	// fully read by the caller.
+	ValueFunc func(inputs lazyseq.Rereader) <-chan *anyseq.Batch
+
+	// Discount is the reward discount factor.
+	// Values closer to 1 give a longer time horizon.
+	Discount float64
+
+	// Lambda ranges from 0 to 1 and controls the amount of
+	// variance (0 = low variance).
+	Lambda float64
+}
+
+// JudgeActions repeats the cumulative rewards at every
+// timestep in a tape.
+func (g *GAEJudger) JudgeActions(r *anyrl.RolloutSet) anyrl.Rewards {
+	firstIn, ok := <-r.Inputs.ReadTape(0, 1)
+	if !ok {
+		return make(anyrl.Rewards, len(r.Rewards))
+	}
+	input := lazyseq.TapeRereader(firstIn.Packed.Creator(), r.Inputs)
+	criticOut := g.ValueFunc(input)
+
+	estimatedValues := make([][]float64, len(r.Rewards))
+	for outBatch := range criticOut {
+		comps := vectorToComponents(outBatch.Packed)
+		for i, pres := range outBatch.Present {
+			if pres {
+				estimatedValues[i] = append(estimatedValues[i], comps[0])
+				comps = comps[1:]
+			}
+		}
+	}
+
+	var res [][]float64
+	for i, rewSeq := range r.Rewards {
+		valSeq := estimatedValues[i]
+		advantages := make([]float64, len(rewSeq))
+		var accumulation float64
+		for t := len(rewSeq) - 1; t >= 0; t-- {
+			delta := rewSeq[t] - valSeq[t]
+			if t+1 < len(rewSeq) {
+				delta += g.Discount * valSeq[t+1]
+			}
+			accumulation *= g.Discount * g.Lambda
+			accumulation += delta
+			advantages[t] = accumulation
+		}
+		res = append(res, advantages)
+	}
+
+	return anyrl.Rewards(res)
+}
+
 func flattenRewards(r anyrl.Rewards) []float64 {
 	var values []float64
 	for _, seq := range r {
@@ -158,5 +223,20 @@ func unflattenRewards(output anyrl.Rewards, flat []float64) {
 			seq[i] = flat[0]
 			flat = flat[1:]
 		}
+	}
+}
+
+func vectorToComponents(vec anyvec.Vector) []float64 {
+	switch data := vec.Data().(type) {
+	case []float32:
+		res := make([]float64, len(data))
+		for i, x := range data {
+			res[i] = float64(x)
+		}
+		return res
+	case []float64:
+		return data
+	default:
+		panic("unsupported numeric type")
 	}
 }
