@@ -166,8 +166,7 @@ type GAEJudger struct {
 	Lambda float64
 }
 
-// JudgeActions repeats the cumulative rewards at every
-// timestep in a tape.
+// JudgeActions computes generalized advantage estimates.
 func (g *GAEJudger) JudgeActions(r *anyrl.RolloutSet) anyrl.Rewards {
 	firstIn, ok := <-r.Inputs.ReadTape(0, 1)
 	if !ok {
