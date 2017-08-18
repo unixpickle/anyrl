@@ -4,7 +4,10 @@ import (
 	"math"
 	"testing"
 
+	"github.com/unixpickle/anydiff/anyseq"
 	"github.com/unixpickle/anyrl"
+	"github.com/unixpickle/anyvec/anyvec64"
+	"github.com/unixpickle/lazyseq"
 )
 
 func TestQJudger(t *testing.T) {
@@ -55,6 +58,33 @@ func TestQJudgerNormalized(t *testing.T) {
 		{},
 		{-1.028991510855053, -1.314822486092568},
 	}
+
+	testRewardsEquiv(t, actual, expected)
+}
+
+func TestGAEJudgerNoBias(t *testing.T) {
+	rollouts := rolloutsForTest(anyvec64.DefaultCreator{})
+
+	judger := &GAEJudger{
+		ValueFunc: func(inputs lazyseq.Rereader) <-chan *anyseq.Batch {
+			res := make(chan *anyseq.Batch, 1)
+			go func() {
+				for in := range inputs.Forward() {
+					res <- &anyseq.Batch{
+						Packed:  in.Packed.Creator().MakeVector(in.NumPresent()),
+						Present: in.Present,
+					}
+				}
+				close(res)
+			}()
+			return res
+		},
+		Discount: 0.9,
+		Lambda:   1,
+	}
+
+	actual := judger.JudgeActions(rollouts)
+	expected := (&QJudger{Discount: 0.9}).JudgeActions(rollouts)
 
 	testRewardsEquiv(t, actual, expected)
 }
