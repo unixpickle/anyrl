@@ -11,6 +11,30 @@ import (
 
 const DefaultPPOEpsilon = 0.2
 
+// PPOObjective implements the clipped PPO objective
+// function defined in: https://arxiv.org/abs/1707.06347.
+//
+// The eps argument controls how much each ratio is
+// encouraged to change (e.g. DefaultPPOEpsilon).
+// The rats argument stores ratios between the new action
+// probabilities and the original probabilities.
+// The advs argument stores an advantage for each ratio.
+func PPOObjective(eps anyvec.Numeric, rats, advs anydiff.Res) anydiff.Res {
+	c := rats.Output().Creator()
+	ops := c.NumOps()
+	one := c.MakeNumeric(1)
+	return anydiff.Pool(rats, func(rats anydiff.Res) anydiff.Res {
+		return anydiff.Pool(advs, func(advs anydiff.Res) anydiff.Res {
+			clipped := anydiff.ClipRange(rats, ops.Sub(one, eps),
+				ops.Add(one, eps))
+			return anydiff.ElemMin(
+				anydiff.Mul(clipped, advs),
+				anydiff.Mul(rats, advs),
+			)
+		})
+	})
+}
+
 // PPOTerms represents the current value of the surrogate
 // PPO objective function in terms of the advantage,
 // critic, and regularization terms.
@@ -201,12 +225,5 @@ func (p *PPO) clippedObjective(ratios, advantages anydiff.Res) anydiff.Res {
 		epsilon = DefaultPPOEpsilon
 	}
 	c := ratios.Output().Creator()
-	return anydiff.Pool(ratios, func(ratios anydiff.Res) anydiff.Res {
-		clipped := anydiff.ClipRange(ratios, c.MakeNumeric(1-epsilon),
-			c.MakeNumeric(1+epsilon))
-		return anydiff.ElemMin(
-			anydiff.Mul(clipped, advantages),
-			anydiff.Mul(ratios, advantages),
-		)
-	})
+	return PPOObjective(c.MakeNumeric(epsilon), ratios, advantages)
 }
