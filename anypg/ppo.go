@@ -19,6 +19,9 @@ const DefaultPPOEpsilon = 0.2
 // The rats argument stores ratios between the new action
 // probabilities and the original probabilities.
 // The advs argument stores an advantage for each ratio.
+//
+// The output vector contains one component per action.
+// Each component is the objective value for that action.
 func PPOObjective(eps anyvec.Numeric, rats, advs anydiff.Res) anydiff.Res {
 	c := rats.Output().Creator()
 	ops := c.NumOps()
