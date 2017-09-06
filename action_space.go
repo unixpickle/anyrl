@@ -76,13 +76,15 @@ func (s Softmax) Sample(params anyvec.Vector, batch int) anyvec.Vector {
 	anyvec.LogSoftmax(p, chunkSize)
 	anyvec.Exp(p)
 
-	var oneHots []anyvec.Vector
+	probBatch := p.Creator().Float64Slice(p.Data())
+
+	var oneHots []float64
 	for i := 0; i < batch; i++ {
-		subset := p.Slice(i*chunkSize, (i+1)*chunkSize)
-		oneHots = append(oneHots, sampleProbabilities(subset))
+		subset := probBatch[i*chunkSize : (i+1)*chunkSize]
+		oneHots = append(oneHots, sampleProbabilities(subset)...)
 	}
 
-	return p.Creator().Concat(oneHots...)
+	return anyvec.Make(p.Creator(), oneHots)
 }
 
 // LogProb computes the output log probabilities.
@@ -450,33 +452,20 @@ func batchedDot(vecs1, vecs2 anydiff.Res, batchSize int) anydiff.Res {
 
 // sampleProbabilities samples a one-hot vector from a
 // list of index probabilities.
-func sampleProbabilities(p anyvec.Vector) anyvec.Vector {
+func sampleProbabilities(p []float64) []float64 {
 	randNum := rand.Float64()
-	idx := p.Len() - 1
-	switch data := p.Data().(type) {
-	case []float32:
-		for i, x := range data {
-			randNum -= float64(x)
-			if randNum < 0 {
-				idx = i
-				break
-			}
+	idx := len(p) - 1
+	for i, x := range p {
+		randNum -= x
+		if randNum < 0 {
+			idx = i
+			break
 		}
-	case []float64:
-		for i, x := range data {
-			randNum -= x
-			if randNum < 0 {
-				idx = i
-				break
-			}
-		}
-	default:
-		panic(fmt.Sprintf("cannot sample from %T", data))
 	}
 
-	oneHot := make([]float64, p.Len())
+	oneHot := make([]float64, len(p))
 	oneHot[idx] = 1
-	return p.Creator().MakeVectorData(p.Creator().MakeNumericList(oneHot))
+	return oneHot
 }
 
 // pairWithComplement turns a vector of the form
