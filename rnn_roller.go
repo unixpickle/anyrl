@@ -187,13 +187,6 @@ func rolloutStep(actions *anyseq.Batch, envs []Env) (obs *anyseq.Batch,
 	return
 }
 
-type envStepRes struct {
-	observation anyvec.Vector
-	reward      float64
-	done        bool
-	err         error
-}
-
 func batchStep(envs []Env, actions [][]float64) (obs [][]float64,
 	rewards []float64, done []bool, err []error) {
 	obs = make([][]float64, len(envs))
