@@ -40,7 +40,7 @@ func main() {
 	creator := anyvec32.CurrentCreator()
 
 	// Wrap the gym environment in an anyrl.Env.
-	env, err := anyrl.GymEnv(creator, client, RenderEnv)
+	env, err := anyrl.GymEnv(client, RenderEnv)
 	must(err)
 
 	// Create a neural network policy.

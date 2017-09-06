@@ -2,8 +2,6 @@ package anyrl
 
 import (
 	"errors"
-
-	"github.com/unixpickle/anyvec"
 )
 
 // MetaEnv is a meta-learning environment in which
@@ -32,19 +30,19 @@ type MetaEnv struct {
 }
 
 // Reset resets the environment.
-func (m *MetaEnv) Reset() (obs anyvec.Vector, err error) {
+func (m *MetaEnv) Reset() (obs []float64, err error) {
 	m.runsRemaining = m.NumRuns
 	obs, err = m.Env.Reset()
 	if err != nil {
 		return
 	}
-	zeroVec := obs.Creator().MakeVector(m.ActionSize + 2)
-	obs = obs.Creator().Concat(obs, zeroVec)
-	return
+	newObs := make([]float64, len(obs)+m.ActionSize+2)
+	copy(newObs, obs)
+	return newObs, nil
 }
 
 // Step takes a step in the environment.
-func (m *MetaEnv) Step(act anyvec.Vector) (obs anyvec.Vector, rew float64,
+func (m *MetaEnv) Step(act []float64) (obs []float64, rew float64,
 	done bool, err error) {
 	if m.runsRemaining <= 0 {
 		err = errors.New("step: done sub-episodes in meta-environment")
@@ -66,8 +64,7 @@ func (m *MetaEnv) Step(act anyvec.Vector) (obs anyvec.Vector, rew float64,
 			}
 		}
 	}
-	c := obs.Creator()
-	obs = c.Concat(obs, act, c.MakeVectorData(c.MakeNumericList(rewDoneVec)))
+	obs = append(append(append([]float64{}, obs...), act...), rewDoneVec...)
 	return
 }
 
@@ -81,13 +78,13 @@ type MaxStepsEnv struct {
 }
 
 // Reset resets the environment.
-func (m *MaxStepsEnv) Reset() (anyvec.Vector, error) {
+func (m *MaxStepsEnv) Reset() ([]float64, error) {
 	m.steps = 0
 	return m.Env.Reset()
 }
 
 // Step takes a step in the environment.
-func (m *MaxStepsEnv) Step(action anyvec.Vector) (anyvec.Vector, float64, bool, error) {
+func (m *MaxStepsEnv) Step(action []float64) ([]float64, float64, bool, error) {
 	obs, rew, done, err := m.Env.Step(action)
 	m.steps++
 	if m.steps == m.MaxSteps {

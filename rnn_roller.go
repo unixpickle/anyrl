@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/unixpickle/anydiff/anyseq"
+	"github.com/unixpickle/anynet"
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/essentials"
@@ -21,6 +22,12 @@ type TapeMaker func() (tape lazyseq.Tape, writer chan<- *anyseq.Batch)
 type RNNRoller struct {
 	Block       anyrnn.Block
 	ActionSpace Sampler
+
+	// Creator is used to convert observations to and
+	// from the block.
+	// If nil, the creator of the block's first parameter
+	// is used.
+	Creator anyvec.Creator
 
 	// These functions are called to produce tapes when
 	// building a RolloutSet.
@@ -67,7 +74,7 @@ func (r *RNNRoller) rolloutChans(inputCh, actionCh, agentOutCh chan<- *anyseq.Ba
 		return nil, nil
 	}
 
-	initBatch, err := rolloutReset(envs)
+	initBatch, err := rolloutReset(r.creator(), envs)
 	if err != nil {
 		return nil, err
 	}
@@ -107,22 +114,30 @@ func (r *RNNRoller) rolloutChans(inputCh, actionCh, agentOutCh chan<- *anyseq.Ba
 	return rewards, nil
 }
 
-func rolloutReset(envs []Env) (*anyseq.Batch, error) {
+func (r *RNNRoller) creator() anyvec.Creator {
+	if r.Creator != nil {
+		return r.Creator
+	} else {
+		return anynet.AllParameters(r.Block)[0].Output().Creator()
+	}
+}
+
+func rolloutReset(c anyvec.Creator, envs []Env) (*anyseq.Batch, error) {
 	initBatch := &anyseq.Batch{
 		Present: make([]bool, len(envs)),
 	}
 
-	var allObs []anyvec.Vector
+	var allObs []float64
 	for i, e := range envs {
 		obs, err := e.Reset()
 		if err != nil {
 			return nil, err
 		}
 		initBatch.Present[i] = true
-		allObs = append(allObs, obs)
+		allObs = append(allObs, obs...)
 	}
 
-	initBatch.Packed = allObs[0].Creator().Concat(allObs...)
+	initBatch.Packed = anyvec.Make(c, allObs)
 
 	return initBatch, nil
 }
@@ -133,14 +148,15 @@ func rolloutStep(actions *anyseq.Batch, envs []Env) (obs *anyseq.Batch,
 	obs = &anyseq.Batch{
 		Present: make([]bool, len(actions.Present)),
 	}
-	var splitActions []anyvec.Vector
+	var splitActions [][]float64
 	var presentEnvs []Env
 
 	actionChunkSize := actions.Packed.Len() / actions.NumPresent()
 	var actionOffset int
+	actionSlice := c.Float64Slice(actions.Packed.Data())
 	for i, pres := range actions.Present {
 		if pres {
-			action := actions.Packed.Slice(actionOffset, actionOffset+actionChunkSize)
+			action := actionSlice[actionOffset : actionOffset+actionChunkSize]
 			actionOffset += actionChunkSize
 			splitActions = append(splitActions, action)
 			presentEnvs = append(presentEnvs, envs[i])
@@ -150,7 +166,7 @@ func rolloutStep(actions *anyseq.Batch, envs []Env) (obs *anyseq.Batch,
 	obsVecs, rewards, dones, errs := batchStep(presentEnvs, splitActions)
 
 	var presentIdx int
-	var joinObs []anyvec.Vector
+	var joinObs []float64
 	for i, pres := range actions.Present {
 		if !pres {
 			continue
@@ -162,11 +178,11 @@ func rolloutStep(actions *anyseq.Batch, envs []Env) (obs *anyseq.Batch,
 		}
 		if !done {
 			obs.Present[i] = true
-			joinObs = append(joinObs, obsVec)
+			joinObs = append(joinObs, obsVec...)
 		}
 	}
 
-	obs.Packed = c.Concat(joinObs...)
+	obs.Packed = anyvec.Make(c, joinObs)
 
 	return
 }
@@ -178,9 +194,9 @@ type envStepRes struct {
 	err         error
 }
 
-func batchStep(envs []Env, actions []anyvec.Vector) (obs []anyvec.Vector,
+func batchStep(envs []Env, actions [][]float64) (obs [][]float64,
 	rewards []float64, done []bool, err []error) {
-	obs = make([]anyvec.Vector, len(envs))
+	obs = make([][]float64, len(envs))
 	rewards = make([]float64, len(envs))
 	done = make([]bool, len(envs))
 	err = make([]error, len(envs))

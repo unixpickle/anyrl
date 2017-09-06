@@ -29,7 +29,7 @@ func TestRNNRoller(t *testing.T) {
 		envs[i] = &rnnTestEnv{
 			RewardScale: rand.Float64(),
 			EpLen:       seqLens[i],
-			Observation: randObs,
+			Observation: c.Float64Slice(randObs.Data()),
 		}
 	}
 
@@ -95,27 +95,35 @@ func TestRNNRoller(t *testing.T) {
 type rnnTestEnv struct {
 	RewardScale float64
 	EpLen       int
-	Observation anyvec.Vector
+	Observation []float64
 
 	timestep int
 }
 
-func (r *rnnTestEnv) Reset() (anyvec.Vector, error) {
+func (r *rnnTestEnv) Reset() ([]float64, error) {
 	r.timestep = 1
 	return r.obsVec(), nil
 }
 
-func (r *rnnTestEnv) Step(action anyvec.Vector) (obs anyvec.Vector, rew float64,
+func (r *rnnTestEnv) Step(action []float64) (obs []float64, rew float64,
 	done bool, err error) {
 	obs = r.obsVec()
-	rew = float64(anyvec.MaxIndex(action)) * r.RewardScale
+	max := math.Inf(-1)
+	for i, x := range action {
+		if x > max {
+			max = x
+			rew = float64(i) * r.RewardScale
+		}
+	}
 	done = r.timestep == r.EpLen
 	r.timestep++
 	return
 }
 
-func (r *rnnTestEnv) obsVec() anyvec.Vector {
-	res := r.Observation.Copy()
-	res.Scale(res.Creator().MakeNumeric(float64(r.timestep)))
+func (r *rnnTestEnv) obsVec() []float64 {
+	res := make([]float64, len(r.Observation))
+	for i, x := range r.Observation {
+		res[i] = x * float64(r.timestep)
+	}
 	return res
 }

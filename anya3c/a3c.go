@@ -8,11 +8,13 @@ import (
 
 	"github.com/unixpickle/anyrl"
 	"github.com/unixpickle/anyrl/anypg"
+	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/essentials"
 )
 
 // A3C holds the configuration for an instance of A3C.
 type A3C struct {
+	Creator     anyvec.Creator
 	ParamServer ParamServer
 	Logger      Logger
 
@@ -67,7 +69,7 @@ func (a *A3C) Run(envs []anyrl.Env, done <-chan struct{}) (err error) {
 }
 
 func (a *A3C) worker(id int, env anyrl.Env, stopChan <-chan struct{}) error {
-	w, err := newWorker(id, env, a.ParamServer)
+	w, err := newWorker(a.Creator, id, env, a.ParamServer)
 	if err != nil {
 		return err
 	}

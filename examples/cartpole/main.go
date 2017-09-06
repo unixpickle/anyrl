@@ -51,7 +51,7 @@ func main() {
 	actionSampler := &anyrl.Bernoulli{OneHot: true}
 
 	// Create an anyrl.Env from our gym environment.
-	env, err := anyrl.GymEnv(creator, client, RenderEnv)
+	env, err := anyrl.GymEnv(client, RenderEnv)
 	must(err)
 
 	// Setup Trust Region Policy Optimization for training.

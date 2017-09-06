@@ -53,7 +53,7 @@ func main() {
 		must(err)
 		defer client.Close()
 
-		envs[i], err = anyrl.GymEnv(creator, client, Render && i == 0)
+		envs[i], err = anyrl.GymEnv(client, Render && i == 0)
 		must(err)
 	}
 
@@ -62,6 +62,7 @@ func main() {
 		StepSize, anysgd.RMSProp{DecayRate: 0.99})
 	defer paramServer.Close()
 	a3c := &anya3c.A3C{
+		Creator:     creator,
 		ParamServer: paramServer,
 
 		// Log out reward averages and critic MSE averages.

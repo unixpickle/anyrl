@@ -8,6 +8,8 @@ import (
 
 // A worker manages the current state of a worker.
 type worker struct {
+	Creator anyvec.Creator
+
 	ID int
 
 	Agent *LocalAgent
@@ -40,12 +42,13 @@ type worker struct {
 // newWorker creates a worker with its own local agent.
 //
 // The worker should be reset before it is used.
-func newWorker(id int, env anyrl.Env, p ParamServer) (*worker, error) {
+func newWorker(c anyvec.Creator, id int, env anyrl.Env, p ParamServer) (*worker, error) {
 	agent, err := p.LocalCopy()
 	if err != nil {
 		return nil, err
 	}
 	res := &worker{
+		Creator:    c,
 		ID:         id,
 		Agent:      agent,
 		Env:        env,
@@ -57,10 +60,11 @@ func newWorker(id int, env anyrl.Env, p ParamServer) (*worker, error) {
 // Reset resets the environment and the RNN state.
 func (w *worker) Reset() error {
 	var err error
-	w.EnvObs, err = w.Env.Reset()
+	rawObs, err := w.Env.Reset()
 	if err != nil {
 		return err
 	}
+	w.EnvObs = anyvec.Make(w.Creator, rawObs)
 	w.EnvDone = false
 	for i, block := range w.blocks() {
 		w.AgentState[i] = block.Start(1)
@@ -94,10 +98,13 @@ func (w *worker) StepAgent() {
 func (w *worker) StepEnv() (reward float64, action anyvec.Vector, err error) {
 	actorOut := w.AgentRes[1].Output()
 	action = w.Agent.ActionSpace.Sample(actorOut, 1)
-	w.EnvObs, reward, w.EnvDone, err = w.Env.Step(action)
+	nativeAction := w.Creator.Float64Slice(action.Data())
+	var newObs []float64
+	newObs, reward, w.EnvDone, err = w.Env.Step(nativeAction)
 	if err != nil {
 		return
 	}
+	w.EnvObs = anyvec.Make(w.Creator, newObs)
 	w.RewardSum += reward
 	w.AgentRes = nil
 	w.StepIdx++

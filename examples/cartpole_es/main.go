@@ -59,13 +59,14 @@ func main() {
 		defer client.Close()
 
 		// Create an anyrl.Env from our gym environment.
-		env, err := anyrl.GymEnv(creator, client, RenderEnv)
+		env, err := anyrl.GymEnv(client, RenderEnv)
 		must(err)
 
 		// Create a copy of the model.
 		newPolicy, err := serializer.Copy(policy)
 		must(err)
 		slave := &anyes.AnynetSlave{
+			Creator: creator,
 			Params: &anyes.AnynetParams{
 				Params: anynet.AllParameters(newPolicy),
 			},

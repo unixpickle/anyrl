@@ -5,6 +5,7 @@ import (
 
 	"github.com/unixpickle/anynet/anyrnn"
 	"github.com/unixpickle/anyrl"
+	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/essentials"
 )
 
@@ -70,9 +71,10 @@ type Slave interface {
 // AnynetSlave is a Slave which works by running an RNN
 // block on a pre-determined environment.
 type AnynetSlave struct {
-	Params *AnynetParams
-	Policy anyrnn.Block
-	Env    anyrl.Env
+	Creator anyvec.Creator
+	Params  *AnynetParams
+	Policy  anyrnn.Block
+	Env     anyrl.Env
 
 	// Sampler, if non-nil, is applied to Policy outputs
 	// right before they are fed to the environment.
@@ -137,7 +139,7 @@ func (a *AnynetSlave) Run(stop *StopConds, scale float64, seed int64) (r *Rollou
 		default:
 		}
 
-		out := a.Policy.Step(state, obs)
+		out := a.Policy.Step(state, anyvec.Make(a.Creator, obs))
 		state = out.State()
 		action := out.Output()
 		if a.Sampler != nil {
@@ -146,7 +148,7 @@ func (a *AnynetSlave) Run(stop *StopConds, scale float64, seed int64) (r *Rollou
 
 		var rew float64
 		var done bool
-		obs, rew, done, err = a.Env.Step(action)
+		obs, rew, done, err = a.Env.Step(a.Creator.Float64Slice(action.Data()))
 		if err != nil {
 			return
 		}
