@@ -70,3 +70,28 @@ func (m *MetaEnv) Step(act anyvec.Vector) (obs anyvec.Vector, rew float64,
 	obs = c.Concat(obs, act, c.MakeVectorData(c.MakeNumericList(rewDoneVec)))
 	return
 }
+
+// MaxStepsEnv wraps an Env and ends episodes early if
+// they run longer than MaxSteps timesteps.
+type MaxStepsEnv struct {
+	Env
+	MaxSteps int
+
+	steps int
+}
+
+// Reset resets the environment.
+func (m *MaxStepsEnv) Reset() (anyvec.Vector, error) {
+	m.steps = 0
+	return m.Env.Reset()
+}
+
+// Step takes a step in the environment.
+func (m *MaxStepsEnv) Step(action anyvec.Vector) (anyvec.Vector, float64, bool, error) {
+	obs, rew, done, err := m.Env.Step(action)
+	m.steps++
+	if m.steps == m.MaxSteps {
+		done = true
+	}
+	return obs, rew, done, err
+}
