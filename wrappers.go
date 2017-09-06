@@ -26,11 +26,12 @@ type MetaEnv struct {
 	// vector.
 	ActionSize int
 
-	// If RewardLast is set, then rewards will be 0 up
+	// If RewardAll is not set, then rewards will be 0 up
 	// until the last episode of the meta-episode.
-	// Even if this is set, the original rewards are always
+	//
+	// Even if this is false, the original rewards are
 	// always appended to the observations.
-	RewardLast bool
+	RewardAll bool
 
 	runsRemaining int
 }
@@ -70,7 +71,7 @@ func (m *MetaEnv) Step(act []float64) (obs []float64, rew float64,
 			}
 		}
 	}
-	if m.RewardLast && m.runsRemaining > 1 {
+	if !m.RewardAll && m.runsRemaining > 1 {
 		rew = 0
 	}
 	obs = append(append(append([]float64{}, obs...), act...), rewDoneVec...)
