@@ -98,7 +98,7 @@ func main() {
 		}
 
 		// Join the rollouts into one set.
-		packed := anyrl.PackRolloutSets(rollouts)
+		packed := anyrl.PackRolloutSets(creator, rollouts)
 
 		// Print stats for the batch.
 		entropyReg := &anypg.EntropyReg{Entropyer: actionSpace, Coeff: 1}

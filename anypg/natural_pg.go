@@ -166,7 +166,7 @@ func (n *NaturalPG) applyFisher(r *anyrl.RolloutSet, grad anydiff.Grad,
 		GradSize:     1,
 	}
 	fwdBlock, paramMap := n.makeFwd(c, grad)
-	fwdIn := &makeFwdTape{Tape: r.Inputs, Creator: c}
+	fwdIn := &makeFwdTape{Tape: r.Inputs, creator: c}
 
 	outSeq := &unfwdRereader{
 		Fwd:          n.apply(lazyseq.TapeRereader(c, fwdIn), fwdBlock),
@@ -208,7 +208,7 @@ func (n *NaturalPG) applyFisher(r *anyrl.RolloutSet, grad anydiff.Grad,
 
 func (n *NaturalPG) apply(in lazyseq.Rereader, b anyrnn.Block) lazyseq.Rereader {
 	if n.ApplyPolicy == nil {
-		tape, writer := lazyseq.ReferenceTape()
+		tape, writer := lazyseq.ReferenceTape(in.Creator())
 		return lazyseq.SeqRereader(lazyrnn.BPTT(in, b), tape, writer)
 	} else {
 		return n.ApplyPolicy(in, b)
@@ -258,7 +258,11 @@ type naturalPGRes struct {
 // auto-diff creator.
 type makeFwdTape struct {
 	Tape    lazyseq.Tape
-	Creator *anyfwd.Creator
+	creator *anyfwd.Creator
+}
+
+func (m *makeFwdTape) Creator() anyvec.Creator {
+	return m.creator
 }
 
 func (m *makeFwdTape) ReadTape(start, end int) <-chan *anyseq.Batch {
@@ -267,7 +271,7 @@ func (m *makeFwdTape) ReadTape(start, end int) <-chan *anyseq.Batch {
 		for in := range m.Tape.ReadTape(start, end) {
 			newBatch := &anyseq.Batch{
 				Present: in.Present,
-				Packed:  m.Creator.MakeVector(in.Packed.Len()),
+				Packed:  m.creator.MakeVector(in.Packed.Len()),
 			}
 			newBatch.Packed.(*anyfwd.Vector).Values.Set(in.Packed)
 			res <- newBatch

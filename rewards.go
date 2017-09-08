@@ -24,7 +24,7 @@ func PackRewards(r []Rewards) Rewards {
 // If all the reward sequences are empty, then c is never
 // used and may be nil.
 func (r Rewards) Tape(c anyvec.Creator) lazyseq.Tape {
-	res, writer := lazyseq.ReferenceTape()
+	res, writer := lazyseq.ReferenceTape(c)
 
 	var t int
 	for {

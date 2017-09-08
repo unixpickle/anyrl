@@ -15,7 +15,8 @@ import (
 // channel for writing to that tape.
 //
 // See lazyseq.ReferenceTape for an example.
-type TapeMaker func() (tape lazyseq.Tape, writer chan<- *anyseq.Batch)
+type TapeMaker func(c anyvec.Creator) (tape lazyseq.Tape,
+	writer chan<- *anyseq.Batch)
 
 // RNNRoller runs RNN agents through environments and
 // saves the results to RolloutSets.
@@ -45,9 +46,10 @@ type RNNRoller struct {
 func (r *RNNRoller) Rollout(envs ...Env) (rollouts *RolloutSet, err error) {
 	defer essentials.AddCtxTo("rollout RNN", &err)
 
-	inputs, inputCh := makeTape(r.MakeInputTape)
-	actions, actionCh := makeTape(r.MakeActionTape)
-	agentOuts, agentOutCh := makeTape(r.MakeAgentOutTape)
+	c := r.creator()
+	inputs, inputCh := makeTape(c, r.MakeInputTape)
+	actions, actionCh := makeTape(c, r.MakeActionTape)
+	agentOuts, agentOutCh := makeTape(c, r.MakeAgentOutTape)
 
 	defer func() {
 		close(inputCh)
@@ -205,10 +207,10 @@ func batchStep(envs []Env, actions [][]float64) (obs [][]float64,
 	return
 }
 
-func makeTape(maker TapeMaker) (lazyseq.Tape, chan<- *anyseq.Batch) {
+func makeTape(c anyvec.Creator, maker TapeMaker) (lazyseq.Tape, chan<- *anyseq.Batch) {
 	if maker != nil {
-		return maker()
+		return maker(c)
 	} else {
-		return lazyseq.ReferenceTape()
+		return lazyseq.ReferenceTape(c)
 	}
 }

@@ -81,7 +81,7 @@ func TestFisher(t *testing.T) {
 		vec.Scale(c.MakeNumeric(0.0001))
 	}
 	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(c, r.Inputs), npg.Policy))
-	stored, writer := lazyseq.ReferenceTape()
+	stored, writer := lazyseq.ReferenceTape(c)
 	for item := range outSeq.Forward() {
 		writer <- item.Reduce(item.Present)
 	}
@@ -196,8 +196,8 @@ func BenchmarkFisher(b *testing.B) {
 }
 
 func rolloutsForTest(c anyvec.Creator) *anyrl.RolloutSet {
-	inputs, inputWriter := lazyseq.ReferenceTape()
-	actions, actionsWriter := lazyseq.ReferenceTape()
+	inputs, inputWriter := lazyseq.ReferenceTape(c)
+	actions, actionsWriter := lazyseq.ReferenceTape(c)
 	rewards := make(anyrl.Rewards, 3)
 	for i := 0; i < 3; i++ {
 		vec := c.MakeVector(6)

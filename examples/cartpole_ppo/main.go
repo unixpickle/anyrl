@@ -92,7 +92,7 @@ func main() {
 		}
 
 		// Join the rollouts into one set.
-		r := anyrl.PackRolloutSets(rollouts)
+		r := anyrl.PackRolloutSets(creator, rollouts)
 
 		// Print the rewards.
 		log.Printf("batch %d: mean_reward=%f", batchIdx, r.Rewards.Mean())

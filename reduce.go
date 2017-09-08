@@ -51,16 +51,17 @@ func (f *FracReducer) Reduce(r *RolloutSet) *RolloutSet {
 }
 
 func reduceTape(maker TapeMaker, t lazyseq.Tape, present []bool) lazyseq.Tape {
+	reduced := lazyseq.ReduceTape(t, present)
 	if maker == nil {
-		return lazyseq.ReduceTape(t, present)
+		return reduced
 	} else {
-		newTape, writer := maker()
+		copiedTape, writer := maker(reduced.Creator())
 		go func() {
 			defer close(writer)
 			for batch := range lazyseq.ReduceTape(t, present).ReadTape(0, -1) {
 				writer <- batch
 			}
 		}()
-		return newTape
+		return copiedTape
 	}
 }

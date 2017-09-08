@@ -1,6 +1,9 @@
 package anyrl
 
-import "github.com/unixpickle/lazyseq"
+import (
+	"github.com/unixpickle/anyvec"
+	"github.com/unixpickle/lazyseq"
+)
 
 // A RolloutSet is a batch of recorded episodes.
 type RolloutSet struct {
@@ -28,7 +31,7 @@ type RolloutSet struct {
 
 // PackRolloutSets joins multiple RolloutSets into one
 // larger set.
-func PackRolloutSets(rs []*RolloutSet) *RolloutSet {
+func PackRolloutSets(c anyvec.Creator, rs []*RolloutSet) *RolloutSet {
 	res := &RolloutSet{}
 
 	fieldGetters := []func(r *RolloutSet) *lazyseq.Tape{
@@ -53,7 +56,7 @@ func PackRolloutSets(rs []*RolloutSet) *RolloutSet {
 			continue
 		}
 
-		*getter(res) = lazyseq.PackTape(tapes)
+		*getter(res) = lazyseq.PackTape(c, tapes)
 	}
 
 	rewards := make([]Rewards, len(rs))
