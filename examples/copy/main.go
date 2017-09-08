@@ -102,7 +102,7 @@ func main() {
 
 		// Print stats for the batch.
 		entropyReg := &anypg.EntropyReg{Entropyer: actionSpace, Coeff: 1}
-		entropy := anypg.AverageReg(creator, packed.AgentOuts, entropyReg)
+		entropy := anypg.AverageReg(packed.AgentOuts, entropyReg)
 		log.Printf("batch %d: mean=%f entropy=%f", batchIdx, packed.Rewards.Mean(),
 			entropy)
 		batchIdx++
