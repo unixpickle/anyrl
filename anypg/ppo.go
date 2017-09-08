@@ -111,9 +111,9 @@ type PPO struct {
 func (p *PPO) Advantage(r *anyrl.RolloutSet) lazyseq.Tape {
 	var creator anyvec.Creator
 	judger := &GAEJudger{
-		ValueFunc: func(seq lazyseq.Rereader) <-chan *anyseq.Batch {
-			creator = seq.Creator()
-			return p.Critic(p.applyBase(seq.Creator(), r)).Forward()
+		ValueFunc: func(inputs lazyseq.Rereader) <-chan *anyseq.Batch {
+			creator = inputs.Creator()
+			return p.Critic(p.applyBaseIn(inputs)).Forward()
 		},
 		Discount: p.Discount,
 		Lambda:   p.Lambda,
@@ -214,11 +214,15 @@ func (p *PPO) runActorCritic(c anyvec.Creator, r *anyrl.RolloutSet,
 	}
 }
 
-func (p *PPO) applyBase(c anyvec.Creator, r *anyrl.RolloutSet) lazyseq.Reuser {
+func (p *PPO) applyBase(c anyvec.Creator, r *anyrl.RolloutSet) lazyseq.Rereader {
+	return p.applyBaseIn(lazyseq.TapeRereader(c, r.Inputs))
+}
+
+func (p *PPO) applyBaseIn(in lazyseq.Rereader) lazyseq.Rereader {
 	if p.Base == nil {
-		return lazyseq.MakeReuser(lazyseq.TapeRereader(c, r.Inputs))
+		return in
 	} else {
-		return lazyseq.MakeReuser(p.Base(lazyseq.TapeRereader(c, r.Inputs)))
+		return p.Base(in)
 	}
 }
 
