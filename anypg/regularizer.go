@@ -85,9 +85,8 @@ func (k *KLReg) Regularize(params anydiff.Res, batchSize int) anydiff.Res {
 
 // AverageReg computes the average regularization term
 // across all rollouts.
-func AverageReg(c anyvec.Creator, agentOuts lazyseq.Tape,
-	reg Regularizer) anyvec.Numeric {
-	inSeq := lazyseq.TapeRereader(c, agentOuts)
+func AverageReg(agentOuts lazyseq.Tape, reg Regularizer) anyvec.Numeric {
+	inSeq := lazyseq.TapeRereader(agentOuts)
 	regSeq := lazyseq.Map(inSeq, reg.Regularize)
 	return anyvec.Sum(lazyseq.Mean(regSeq).Output())
 }

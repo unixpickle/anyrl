@@ -68,6 +68,11 @@ func PackRolloutSets(c anyvec.Creator, rs []*RolloutSet) *RolloutSet {
 	return res
 }
 
+// Creator returns the input tape's creator.
+func (r *RolloutSet) Creator() anyvec.Creator {
+	return r.Inputs.Creator()
+}
+
 // NumSteps counts the total number of timesteps across
 // every episode.
 func (r *RolloutSet) NumSteps() int {

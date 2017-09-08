@@ -95,9 +95,8 @@ func (n *NaturalPG) run(r *anyrl.RolloutSet) *naturalPGRes {
 	}
 
 	if n.Reduce != nil {
-		c := creatorFromGrad(res.Grad)
 		res.ReducedRollouts = n.Reduce(r)
-		in := lazyseq.TapeRereader(c, res.ReducedRollouts.Inputs)
+		in := lazyseq.TapeRereader(res.ReducedRollouts.Inputs)
 		res.ReducedOut = lazyseq.MakeReuser(n.apply(in, n.Policy))
 	}
 
@@ -108,7 +107,7 @@ func (n *NaturalPG) run(r *anyrl.RolloutSet) *naturalPGRes {
 
 func (n *NaturalPG) conjugateGradients(r *anyrl.RolloutSet, policyOuts lazyseq.Reuser,
 	grad anydiff.Grad) {
-	c := creatorFromGrad(grad)
+	c := r.Creator()
 	ops := c.NumOps()
 
 	// Solving "Fx = grad" for x, where F is the
@@ -162,14 +161,14 @@ func (n *NaturalPG) conjugateGradients(r *anyrl.RolloutSet, policyOuts lazyseq.R
 func (n *NaturalPG) applyFisher(r *anyrl.RolloutSet, grad anydiff.Grad,
 	oldOuts lazyseq.Rereader) anydiff.Grad {
 	c := &anyfwd.Creator{
-		ValueCreator: creatorFromGrad(grad),
+		ValueCreator: r.Creator(),
 		GradSize:     1,
 	}
 	fwdBlock, paramMap := n.makeFwd(c, grad)
 	fwdIn := &makeFwdTape{Tape: r.Inputs, creator: c}
 
 	outSeq := &unfwdRereader{
-		Fwd:          n.apply(lazyseq.TapeRereader(c, fwdIn), fwdBlock),
+		Fwd:          n.apply(lazyseq.TapeRereader(fwdIn), fwdBlock),
 		Regular:      oldOuts,
 		FwdToRegular: paramMap,
 	}
@@ -252,6 +251,10 @@ type naturalPGRes struct {
 	// Always non-nil, but may equal the unreduced version.
 	ReducedOut      lazyseq.Reuser
 	ReducedRollouts *anyrl.RolloutSet
+}
+
+func (n *naturalPGRes) Creator() anyvec.Creator {
+	return n.ReducedRollouts.Creator()
 }
 
 // makeFwdTape wraps a Tape to translate it to a forward
@@ -368,11 +371,17 @@ func zeroGrad(g anydiff.Grad) anydiff.Grad {
 }
 
 func dotGrad(g1, g2 anydiff.Grad) anyvec.Numeric {
-	c := creatorFromGrad(g1)
-	ops := c.NumOps()
-	sum := c.MakeNumeric(0)
+	var sum anyvec.Numeric
 	for variable, grad := range g1 {
-		sum = ops.Add(sum, grad.Dot(g2[variable]))
+		if sum == nil {
+			sum = grad.Dot(g2[variable])
+		} else {
+			ops := grad.Creator().NumOps()
+			sum = ops.Add(sum, grad.Dot(g2[variable]))
+		}
+	}
+	if sum == nil {
+		panic("cannot dot empty gradients")
 	}
 	return sum
 }

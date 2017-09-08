@@ -109,16 +109,14 @@ type PPO struct {
 // same batch, since the advantage estimator will change
 // as the value function is trained.
 func (p *PPO) Advantage(r *anyrl.RolloutSet) lazyseq.Tape {
-	var creator anyvec.Creator
 	judger := &GAEJudger{
 		ValueFunc: func(inputs lazyseq.Rereader) <-chan *anyseq.Batch {
-			creator = inputs.Creator()
 			return p.Critic(p.applyBaseIn(inputs)).Forward()
 		},
 		Discount: p.Discount,
 		Lambda:   p.Lambda,
 	}
-	return judger.JudgeActions(r).Tape(creator)
+	return judger.JudgeActions(r).Tape(r.Inputs.Creator())
 }
 
 // Run computes the gradient for a PPO step.
@@ -135,10 +133,10 @@ func (p *PPO) Run(r *anyrl.RolloutSet, adv lazyseq.Tape) (anydiff.Grad, *PPOTerm
 	if len(grad) == 0 {
 		return grad, nil
 	}
-	c := creatorFromGrad(grad)
+	c := r.Creator()
 	targetValues := (&QJudger{Discount: p.Discount}).JudgeActions(r)
 
-	objective := p.runActorCritic(c, r, func(actor, critic lazyseq.Rereader) anydiff.Res {
+	objective := p.runActorCritic(r, func(actor, critic lazyseq.Rereader) anydiff.Res {
 		obj := lazyseq.MapN(
 			func(n int, v ...anydiff.Res) anydiff.Res {
 				actor, critic := v[0], v[1]
@@ -174,10 +172,10 @@ func (p *PPO) Run(r *anyrl.RolloutSet, adv lazyseq.Tape) (anydiff.Grad, *PPOTerm
 			},
 			actor,
 			critic,
-			lazyseq.TapeRereader(c, r.AgentOuts),
-			lazyseq.TapeRereader(c, r.Actions),
-			lazyseq.TapeRereader(c, adv),
-			lazyseq.TapeRereader(c, targetValues.Tape(c)),
+			lazyseq.TapeRereader(r.AgentOuts),
+			lazyseq.TapeRereader(r.Actions),
+			lazyseq.TapeRereader(adv),
+			lazyseq.TapeRereader(targetValues.Tape(c)),
 		)
 		return lazyseq.Mean(obj)
 	})
@@ -198,24 +196,24 @@ func (p *PPO) Run(r *anyrl.RolloutSet, adv lazyseq.Tape) (anydiff.Grad, *PPOTerm
 //
 // This may perform pooling, hence the unusual callback
 // setup.
-func (p *PPO) runActorCritic(c anyvec.Creator, r *anyrl.RolloutSet,
+func (p *PPO) runActorCritic(r *anyrl.RolloutSet,
 	f func(actor, critic lazyseq.Rereader) anydiff.Res) anydiff.Res {
 	if p.PoolBase {
-		baseOut := p.applyBase(c, r)
+		baseOut := p.applyBase(r)
 		return lazyseq.PoolToVec(baseOut, func(baseOut anyseq.Seq) anydiff.Res {
 			actorOut := p.Actor(lazyseq.Lazify(baseOut))
 			criticOut := p.Critic(lazyseq.Lazify(baseOut))
 			return f(actorOut, criticOut)
 		})
 	} else {
-		actorOut := p.Actor(p.applyBase(c, r))
-		criticOut := p.Critic(p.applyBase(c, r))
+		actorOut := p.Actor(p.applyBase(r))
+		criticOut := p.Critic(p.applyBase(r))
 		return f(actorOut, criticOut)
 	}
 }
 
-func (p *PPO) applyBase(c anyvec.Creator, r *anyrl.RolloutSet) lazyseq.Rereader {
-	return p.applyBaseIn(lazyseq.TapeRereader(c, r.Inputs))
+func (p *PPO) applyBase(r *anyrl.RolloutSet) lazyseq.Rereader {
+	return p.applyBaseIn(lazyseq.TapeRereader(r.Inputs))
 }
 
 func (p *PPO) applyBaseIn(in lazyseq.Rereader) lazyseq.Rereader {

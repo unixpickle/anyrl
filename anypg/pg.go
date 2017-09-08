@@ -3,7 +3,6 @@ package anypg
 import (
 	"github.com/unixpickle/anydiff"
 	"github.com/unixpickle/anyrl"
-	"github.com/unixpickle/anyvec"
 	"github.com/unixpickle/lazyseq"
 )
 
@@ -36,12 +35,12 @@ func (p *PG) Run(r *anyrl.RolloutSet) anydiff.Grad {
 	if len(grad) == 0 {
 		return grad
 	}
-	c := creatorFromGrad(grad)
+	c := r.Creator()
 
-	policyOut := p.Policy(lazyseq.TapeRereader(c, r.Inputs))
+	policyOut := p.Policy(lazyseq.TapeRereader(r.Inputs))
 
-	selectedOuts := lazyseq.TapeRereader(c, r.Actions)
-	rewards := lazyseq.TapeRereader(c, p.actionJudger().JudgeActions(r).Tape(c))
+	selectedOuts := lazyseq.TapeRereader(r.Actions)
+	rewards := lazyseq.TapeRereader(p.actionJudger().JudgeActions(r).Tape(c))
 
 	scores := lazyseq.MapN(func(n int, v ...anydiff.Res) anydiff.Res {
 		actionParams := v[0]
@@ -69,11 +68,4 @@ func (p *PG) actionJudger() ActionJudger {
 	} else {
 		return p.ActionJudger
 	}
-}
-
-func creatorFromGrad(g anydiff.Grad) anyvec.Creator {
-	for _, v := range g {
-		return v.Creator()
-	}
-	panic("empty gradient")
 }

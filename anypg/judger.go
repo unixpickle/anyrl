@@ -168,11 +168,7 @@ type GAEJudger struct {
 
 // JudgeActions computes generalized advantage estimates.
 func (g *GAEJudger) JudgeActions(r *anyrl.RolloutSet) anyrl.Rewards {
-	firstIn, ok := <-r.Inputs.ReadTape(0, 1)
-	if !ok {
-		return make(anyrl.Rewards, len(r.Rewards))
-	}
-	input := lazyseq.TapeRereader(firstIn.Packed.Creator(), r.Inputs)
+	input := lazyseq.TapeRereader(r.Inputs)
 	criticOut := g.ValueFunc(input)
 
 	estimatedValues := make([][]float64, len(r.Rewards))

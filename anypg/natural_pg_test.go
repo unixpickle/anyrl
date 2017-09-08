@@ -38,7 +38,7 @@ func TestFisherDeterministic(t *testing.T) {
 	for _, vec := range inGrad {
 		anyvec.Rand(vec, anyvec.Normal, nil)
 	}
-	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(c, r.Inputs),
+	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(r.Inputs),
 		npg.Policy))
 
 	grad1 := npg.applyFisher(r, inGrad, outSeq)
@@ -80,7 +80,7 @@ func TestFisher(t *testing.T) {
 		anyvec.Rand(vec, anyvec.Normal, nil)
 		vec.Scale(c.MakeNumeric(0.0001))
 	}
-	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(c, r.Inputs), npg.Policy))
+	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(r.Inputs), npg.Policy))
 	stored, writer := lazyseq.ReferenceTape(c)
 	for item := range outSeq.Forward() {
 		writer <- item.Reduce(item.Present)
@@ -92,10 +92,10 @@ func TestFisher(t *testing.T) {
 	actualOutput := 0.5 * dotGrad(inGrad, applied).(float64)
 
 	inGrad.AddToVars()
-	newOutSeq := npg.apply(lazyseq.TapeRereader(c, r.Inputs), block)
+	newOutSeq := npg.apply(lazyseq.TapeRereader(r.Inputs), block)
 	mapped := lazyseq.MapN(func(num int, v ...anydiff.Res) anydiff.Res {
 		return npg.ActionSpace.KL(v[0], v[1], num)
-	}, lazyseq.TapeRereader(c, stored), newOutSeq)
+	}, lazyseq.TapeRereader(stored), newOutSeq)
 	expectedOutput := anyvec.Sum(lazyseq.Mean(mapped).Output()).(float64)
 
 	diff := (actualOutput - expectedOutput) / actualOutput
@@ -135,8 +135,7 @@ func TestConjugateGradients(t *testing.T) {
 	inGrad := pg.Run(r)
 	solvedGrad := copyGrad(inGrad)
 
-	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(c, r.Inputs),
-		npg.Policy))
+	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(r.Inputs), npg.Policy))
 	npg.conjugateGradients(r, outSeq, solvedGrad)
 
 	// Check that F*solvedGrad = inGrad.
@@ -185,7 +184,7 @@ func BenchmarkFisher(b *testing.B) {
 		anyvec.Rand(vec, anyvec.Normal, nil)
 		vec.Scale(c.MakeNumeric(0.0001))
 	}
-	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(c, r.Inputs),
+	outSeq := lazyseq.MakeReuser(npg.apply(lazyseq.TapeRereader(r.Inputs),
 		npg.Policy))
 
 	b.ResetTimer()

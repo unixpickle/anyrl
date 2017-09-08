@@ -61,7 +61,7 @@ func (t *TRPO) Run(r *anyrl.RolloutSet) anydiff.Grad {
 	if res.ZeroGrad {
 		return res.Grad
 	}
-	c := creatorFromGrad(res.Grad)
+	c := r.Creator()
 	stepSize := t.stepSize(res)
 
 	res.Grad.Scale(stepSize)
@@ -77,7 +77,7 @@ func (t *TRPO) Run(r *anyrl.RolloutSet) anydiff.Grad {
 }
 
 func (t *TRPO) stepSize(r *naturalPGRes) anyvec.Numeric {
-	c := creatorFromGrad(r.Grad)
+	c := r.Creator()
 	ops := c.NumOps()
 	r.ReducedOut.Reuse()
 	dotProd := dotGrad(r.Grad, t.applyFisher(r.ReducedRollouts, r.Grad, r.ReducedOut))
@@ -96,11 +96,11 @@ func (t *TRPO) stepSize(r *naturalPGRes) anyvec.Numeric {
 }
 
 func (t *TRPO) acceptable(r *anyrl.RolloutSet, npg *naturalPGRes) bool {
-	c := creatorFromGrad(npg.Grad)
-	inSeq := lazyseq.TapeRereader(c, r.Inputs)
-	rewardSeq := lazyseq.TapeRereader(c, t.actionJudger().JudgeActions(r).Tape(c))
+	c := npg.Creator()
+	inSeq := lazyseq.TapeRereader(r.Inputs)
+	rewardSeq := lazyseq.TapeRereader(t.actionJudger().JudgeActions(r).Tape(c))
 	newOutSeq := t.apply(inSeq, t.steppedPolicy(npg.Grad))
-	sampledOut := lazyseq.TapeRereader(c, r.Actions)
+	sampledOut := lazyseq.TapeRereader(r.Actions)
 	npg.PolicyOut.Reuse()
 
 	// At each timestep, compute a pair <improvement, kl divergence>.
