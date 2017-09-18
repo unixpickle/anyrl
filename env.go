@@ -111,6 +111,8 @@ func converterForSpace(s *gym.Space) (gymSpaceConverter, error) {
 		return &boxSpaceConverter{Len: vecLen}, nil
 	case "Discrete":
 		return &discreteSpaceConverter{N: s.N}, nil
+	case "MultiBinary":
+		return &multiBinarySpaceConverter{N: s.N}, nil
 	case "Tuple":
 		var subConvs []gymSpaceConverter
 		for _, subSpace := range s.Subspaces {
@@ -173,6 +175,34 @@ func (d *discreteSpaceConverter) FromGym(in gym.Obs) ([]float64, error) {
 	out := make([]float64, d.N)
 	out[num] = 1
 	return out, nil
+}
+
+type multiBinarySpaceConverter struct {
+	N int
+}
+
+func (m *multiBinarySpaceConverter) VecLen() int {
+	return m.N
+}
+
+func (m *multiBinarySpaceConverter) ToGym(in []float64) (interface{}, error) {
+	if len(in) != m.VecLen() {
+		return nil, errSpaceLength
+	}
+	for _, x := range in {
+		if x != 0 && x != 1 {
+			return nil, fmt.Errorf("unexpected multi-binary value: %v", x)
+		}
+	}
+	return in, nil
+}
+
+func (m *multiBinarySpaceConverter) FromGym(in gym.Obs) ([]float64, error) {
+	var vec []float64
+	if err := in.Unmarshal(&vec); err != nil {
+		return nil, err
+	}
+	return vec, nil
 }
 
 type tupleSpaceConverter struct {
